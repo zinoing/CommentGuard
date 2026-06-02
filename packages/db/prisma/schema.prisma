@@ -1,0 +1,216 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum Platform {
+  YOUTUBE
+  INSTAGRAM
+}
+
+enum CaseStatus {
+  OPEN
+  UNDER_REVIEW
+  PACKAGED
+  REFERRED
+  CLOSED
+}
+
+enum ActionType {
+  IGNORE
+  HIDE
+  DELETE
+  PRESERVE_AND_DELETE
+}
+
+enum ActionStatus {
+  PENDING
+  APPROVED
+  REJECTED
+  EXECUTED
+  FAILED
+}
+
+enum UserRole {
+  SUPER_ADMIN
+  CHANNEL_MANAGER
+  VIEWER
+  LAW_FIRM
+}
+
+enum RiskType {
+  LEGAL_THREAT
+  HATE_SPEECH
+  HARASSMENT
+  SPAM
+  COORDINATED_ATTACK
+}
+
+model Tenant {
+  id         String    @id @default(cuid())
+  name       String
+  createdAt  DateTime  @default(now())
+  updatedAt  DateTime  @updatedAt
+  users      User[]
+  channels   Channel[]
+}
+
+model User {
+  id           String    @id @default(cuid())
+  email        String    @unique
+  name         String
+  role         UserRole
+  tenantId     String
+  tenant       Tenant    @relation(fields: [tenantId], references: [id])
+  mfaEnabled   Boolean   @default(false)
+  mfaSecret    String?
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+  approvedActions Action[] @relation("ApprovedBy")
+  custodyLogs  CustodyLog[]
+  createdCases Case[]
+}
+
+model Channel {
+  id                  String    @id @default(cuid())
+  platform            Platform
+  platformChannelId   String
+  name                String
+  tenantId            String
+  tenant              Tenant    @relation(fields: [tenantId], references: [id])
+  apiCredentialsRef   String
+  createdAt           DateTime  @default(now())
+  updatedAt           DateTime  @updatedAt
+  comments            Comment[]
+
+  @@unique([platform, platformChannelId])
+}
+
+// Immutable record: no updatedAt, no UPDATE routes allowed
+model Comment {
+  id                  String          @id @default(cuid())
+  channelId           String
+  channel             Channel         @relation(fields: [channelId], references: [id])
+  platformCommentId   String
+  text                String
+  authorPlatformId    String
+  snapshotS3Key       String
+  snapshotHash        String          // SHA-256 of raw comment snapshot
+  snapshotHashAlg     String          @default("sha256")
+  createdAt           DateTime        @default(now())
+  riskAssessments     RiskAssessment[]
+  actions             Action[]
+
+  @@unique([channelId, platformCommentId])
+}
+
+// Immutable record: no updatedAt, classification always "reference_only"
+model RiskAssessment {
+  id                  String      @id @default(cuid())
+  commentId           String
+  comment             Comment     @relation(fields: [commentId], references: [id])
+  riskTypes           RiskType[]
+  legalScore          Float
+  brandScore          Float
+  urgencyScore        Float
+  recommendedAction   ActionType
+  modelVersion        String
+  classification      String      @default("reference_only")
+  isProvisional       Boolean     @default(false)
+  createdAt           DateTime    @default(now())
+}
+
+// Action requires human approval: approved_by is required before execution
+model Action {
+  id                  String        @id @default(cuid())
+  commentId           String
+  comment             Comment       @relation(fields: [commentId], references: [id])
+  actionType          ActionType
+  status              ActionStatus  @default(PENDING)
+  approvedById        String?
+  approvedBy          User?         @relation("ApprovedBy", fields: [approvedById], references: [id])
+  approvedAt          DateTime?
+  executedAt          DateTime?
+  platformResponse    Json?
+  createdAt           DateTime      @default(now())
+  updatedAt           DateTime      @updatedAt
+}
+
+model Case {
+  id               String          @id @default(cuid())
+  title            String
+  status           CaseStatus      @default(OPEN)
+  createdById      String
+  createdBy        User            @relation(fields: [createdById], references: [id])
+  createdAt        DateTime        @default(now())
+  updatedAt        DateTime        @updatedAt
+  custodyLogs      CustodyLog[]
+  evidencePackages EvidencePackage[]
+  shareLinks       ShareLink[]
+}
+
+// Append-only: no updatedAt, no UPDATE/DELETE queries on this table ever
+model CustodyLog {
+  id         String   @id @default(cuid())
+  caseId     String
+  case       Case     @relation(fields: [caseId], references: [id])
+  actorId    String
+  actor      User     @relation(fields: [actorId], references: [id])
+  action     String
+  ipAddress  String
+  metadata   Json?
+  createdAt  DateTime @default(now())
+}
+
+// Immutable record: case_id required (no orphaned packages)
+model EvidencePackage {
+  id           String   @id @default(cuid())
+  caseId       String
+  case         Case     @relation(fields: [caseId], references: [id])
+  pdfS3Key     String
+  checksum     String   // SHA-256 of the PDF
+  checksumAlg  String   @default("sha256")
+  createdById  String
+  createdAt    DateTime @default(now())
+}
+
+// Share link for law firms: crypto token, always expires
+model ShareLink {
+  id          String            @id @default(cuid())
+  caseId      String
+  case        Case              @relation(fields: [caseId], references: [id])
+  token       String            @unique
+  expiresAt   DateTime
+  isRevoked   Boolean           @default(false)
+  revokedAt   DateTime?
+  createdAt   DateTime          @default(now())
+  accessLogs  ShareLinkAccess[]
+}
+
+// Log every access to share links
+model ShareLinkAccess {
+  id          String    @id @default(cuid())
+  shareLinkId String
+  shareLink   ShareLink @relation(fields: [shareLinkId], references: [id])
+  ipAddress   String
+  userAgent   String
+  accessedAt  DateTime  @default(now())
+  wasValid    Boolean
+}
+
+// k-anonymity: NO channel_id, author_id, mcn_id, or any PII
+// Only written when derived from >= 50 distinct channels
+model NetworkPattern {
+  id                   String   @id @default(cuid())
+  patternType          String
+  occurrenceCount      Int
+  distinctChannelCount Int
+  timeWindowStart      DateTime
+  timeWindowEnd        DateTime
+  metadata             Json?
+  createdAt            DateTime @default(now())
+}

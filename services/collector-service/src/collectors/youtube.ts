@@ -1,19 +1,15 @@
 import axios from "axios";
+import crypto from "crypto";
 import { prisma } from "@commentguard/db";
 import { writeCommentSnapshot } from "../s3/snapshot";
 import { consumeQuota, QuotaExceededError } from "../quota/tracker";
-import { Kafka } from "kafkajs";
 
 // YouTube Data API v3 unit costs
 const QUOTA_UNITS = {
-  commentThreadsList: 1, // list operation costs 1 unit
+  commentThreadsList: 1,
 };
 
-const kafka = new Kafka({
-  clientId: "collector-service",
-  brokers: (process.env.KAFKA_BROKERS ?? "localhost:9092").split(","),
-});
-const producer = kafka.producer();
+const CLASSIFIER_URL = process.env.CLASSIFIER_URL ?? "http://localhost:8001";
 
 export async function collectYouTubeComments(channelId: string, pageToken?: string) {
   const channel = await prisma.channel.findUniqueOrThrow({
@@ -68,19 +64,10 @@ export async function collectYouTubeComments(channelId: string, pageToken?: stri
     };
 
     // CHECKLIST §1: write snapshot FIRST, before any classification or action
-    const { s3Key, sha256Hash } = await writeCommentSnapshot(
-      channelId,
-      item.id,
-      rawData
-    );
+    const { s3Key, sha256Hash } = await writeCommentSnapshot(channelId, item.id, rawData);
 
     const comment = await prisma.comment.upsert({
-      where: {
-        channelId_platformCommentId: {
-          channelId,
-          platformCommentId: item.id,
-        },
-      },
+      where: { channelId_platformCommentId: { channelId, platformCommentId: item.id } },
       create: {
         channelId,
         platformCommentId: item.id,
@@ -92,16 +79,36 @@ export async function collectYouTubeComments(channelId: string, pageToken?: stri
       update: {},
     });
 
-    // Publish to Kafka for downstream classification
-    await producer.send({
-      topic: "raw-comments",
-      messages: [
-        {
-          key: comment.id,
-          value: JSON.stringify({ commentId: comment.id, channelId }),
+    // Phase 1: call classifier directly via HTTP (no Kafka — Phase 3+)
+    try {
+      const classifyRes = await axios.post(`${CLASSIFIER_URL}/api/v1/classify`, {
+        comment_id: comment.id,
+        text: rawData.text,
+        author_platform_id: rawData.authorPlatformId,
+        channel_id: channelId,
+        created_at: new Date().toISOString(),
+      });
+      const c = classifyRes.data;
+      await prisma.riskAssessment.create({
+        data: {
+          commentId: comment.id,
+          riskTypes: c.risk_types,
+          legalScore: c.legal_score,
+          brandScore: c.brand_score,
+          urgencyScore: c.urgency_score,
+          recommendedAction: c.recommended_action,
+          modelVersion: c.model_version,
+          classification: "reference_only",
+          isProvisional: c.is_provisional ?? false,
         },
-      ],
-    });
+      });
+    } catch (err) {
+      // Classification failure must not block snapshot/comment storage
+      console.error(`Classification failed for comment ${comment.id}:`, err);
+    }
+
+    // AccountPattern: upsert anomaly signals for this author (CHECKLIST §5)
+    await upsertAccountPattern(rawData.authorPlatformId, channelId);
 
     processedComments.push(comment);
   }
@@ -111,4 +118,29 @@ export async function collectYouTubeComments(channelId: string, pageToken?: stri
     comments: processedComments,
     nextPageToken: response.data.nextPageToken,
   };
+}
+
+// Anonymized cluster token: SHA-256 of channelId prefix (no raw IP from YouTube API)
+function ipClusterToken(channelId: string): string {
+  return crypto.createHash("sha256").update(`cluster:${channelId}`).digest("hex").slice(0, 16);
+}
+
+async function upsertAccountPattern(authorPlatformId: string, channelId: string): Promise<void> {
+  const existing = await prisma.accountPattern.findUnique({ where: { authorPlatformId } });
+  const count = (existing?.commentCount30d ?? 0) + 1;
+
+  await prisma.accountPattern.upsert({
+    where: { authorPlatformId },
+    create: {
+      authorPlatformId,
+      commentCount30d: 1,
+      isNewAccount: true,
+      ipClusterId: ipClusterToken(channelId),
+    },
+    update: {
+      commentCount30d: count,
+      isNewAccount: count <= 3,
+      flaggedAt: count >= 10 ? new Date() : undefined,
+    },
+  });
 }

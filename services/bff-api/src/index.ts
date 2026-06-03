@@ -7,6 +7,7 @@ import { healthRoute } from "./routes/health";
 import { commentsRoute } from "./routes/comments";
 import { casesRoute } from "./routes/cases";
 import { shareLinksRoute } from "./routes/share-links";
+import { dashboardRoute } from "./routes/dashboard";
 
 const app = Fastify({
   logger: {
@@ -54,6 +55,7 @@ async function bootstrap() {
   app.register(commentsRoute, { prefix: "/api/v1/comments" });
   app.register(casesRoute, { prefix: "/api/v1/cases" });
   app.register(shareLinksRoute, { prefix: "/api/v1/share-links" });
+  app.register(dashboardRoute, { prefix: "/api/v1/dashboard" });
 
   const port = Number(process.env.PORT ?? 3001);
   await app.listen({ port, host: "0.0.0.0" });

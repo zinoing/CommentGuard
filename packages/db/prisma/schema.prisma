@@ -168,14 +168,16 @@ model CustodyLog {
 
 // Immutable record: case_id required (no orphaned packages)
 model EvidencePackage {
-  id           String   @id @default(cuid())
-  caseId       String
-  case         Case     @relation(fields: [caseId], references: [id])
-  pdfS3Key     String
-  checksum     String   // SHA-256 of the PDF
-  checksumAlg  String   @default("sha256")
-  createdById  String
-  createdAt    DateTime @default(now())
+  id                   String   @id @default(cuid())
+  caseId               String
+  case                 Case     @relation(fields: [caseId], references: [id])
+  pdfS3Key             String
+  custodyLogS3Key      String   // S3 key for immutable custody log file (CHECKLIST §1)
+  timelinePageIncluded Boolean  @default(false)
+  checksum             String   // SHA-256 of the PDF
+  checksumAlg          String   @default("sha256")
+  createdById          String
+  createdAt            DateTime @default(now())
 }
 
 // Share link for law firms: crypto token, always expires
@@ -200,6 +202,18 @@ model ShareLinkAccess {
   userAgent   String
   accessedAt  DateTime  @default(now())
   wasValid    Boolean
+}
+
+// MVP entity: account anomaly detection signals
+// ip_cluster_id is an anonymized cluster token — never a raw IP
+model AccountPattern {
+  authorPlatformId String    @id
+  commentCount30d  Int       @default(0)
+  isNewAccount     Boolean   @default(false)
+  ipClusterId      String?   // Anonymized cluster token, no raw IP stored
+  flaggedAt        DateTime?
+  createdAt        DateTime  @default(now())
+  updatedAt        DateTime  @updatedAt
 }
 
 // k-anonymity: NO channel_id, author_id, mcn_id, or any PII

@@ -11,6 +11,8 @@ const s3 = new S3Client({
   forcePathStyle: !!process.env.AWS_ENDPOINT_URL,
 });
 
+const BUCKET = process.env.S3_EVIDENCE_BUCKET!;
+
 export async function evidenceRoute(app: FastifyInstance) {
   // CHECKLIST §1: hash verified on every read
   app.get("/snapshots/:commentId", async (req, reply) => {
@@ -32,46 +34,67 @@ export async function evidenceRoute(app: FastifyInstance) {
 
   app.post("/generate", async (req, reply) => {
     // CHECKLIST §2: case_id is required (no orphaned packages)
-    const { caseId, commentIds } = req.body as { caseId: string; commentIds: string[] };
+    const { caseId, commentIds, createdById } = req.body as {
+      caseId: string;
+      commentIds: string[];
+      createdById: string;
+    };
 
-    if (!caseId) {
-      return reply.code(400).send({ error: "caseId is required" });
-    }
+    if (!caseId) return reply.code(400).send({ error: "caseId is required" });
+    if (!createdById) return reply.code(400).send({ error: "createdById is required" });
+
+    // Verify createdById is a real user (CHECKLIST §3)
+    const creator = await prisma.user.findUnique({ where: { id: createdById } });
+    if (!creator) return reply.code(400).send({ error: "createdById must be a valid user ID" });
 
     const pdfBuffer = await generateEvidencePDF(caseId, commentIds);
     const checksum = crypto.createHash("sha256").update(pdfBuffer).digest("hex");
 
-    const s3Key = `evidence/${caseId}/${Date.now()}.pdf`;
-    await s3.send(
-      new PutObjectCommand({
-        Bucket: process.env.S3_EVIDENCE_BUCKET!,
-        Key: s3Key,
-        Body: pdfBuffer,
-        ContentType: "application/pdf",
-      })
-    );
+    const pdfS3Key = `evidence/${caseId}/${Date.now()}.pdf`;
+    await s3.send(new PutObjectCommand({ Bucket: BUCKET, Key: pdfS3Key, Body: pdfBuffer, ContentType: "application/pdf" }));
 
-    // CHECKLIST §2: case_id is required field on EvidencePackage
+    // CHECKLIST §1: custody log stored immutably in S3 (custodyLogS3Key)
+    const custodyLogs = await prisma.custodyLog.findMany({
+      where: { caseId },
+      include: { actor: { select: { email: true, name: true } } },
+      orderBy: { createdAt: "asc" },
+    });
+    const custodyLogPayload = JSON.stringify(custodyLogs);
+    const custodyLogS3Key = `evidence/${caseId}/custody-log-${Date.now()}.json`;
+    await s3.send(new PutObjectCommand({ Bucket: BUCKET, Key: custodyLogS3Key, Body: custodyLogPayload, ContentType: "application/json" }));
+
+    // CHECKLIST §2: case_id required, no orphaned packages
     const pkg = await prisma.evidencePackage.create({
       data: {
         caseId,
-        pdfS3Key: s3Key,
+        pdfS3Key,
+        custodyLogS3Key,
+        timelinePageIncluded: true,
         checksum,
         checksumAlg: "sha256",
-        createdById: (req as any).user?.id ?? "system",
+        createdById,
       },
     });
 
     await prisma.custodyLog.create({
       data: {
         caseId,
-        actorId: (req as any).user?.id ?? "system",
+        actorId: createdById,
         action: "EVIDENCE_PACKAGE_CREATED",
         ipAddress: req.ip,
-        metadata: { packageId: pkg.id, checksum },
+        metadata: { packageId: pkg.id, checksum, pdfS3Key, custodyLogS3Key },
       },
     });
 
-    return reply.code(201).send({ id: pkg.id, checksum, s3Key });
+    return reply.code(201).send({ id: pkg.id, checksum, pdfS3Key, custodyLogS3Key });
+  });
+
+  // List evidence packages for a case
+  app.get("/packages/:caseId", async (req) => {
+    const { caseId } = req.params as { caseId: string };
+    return prisma.evidencePackage.findMany({
+      where: { caseId },
+      orderBy: { createdAt: "desc" },
+    });
   });
 }

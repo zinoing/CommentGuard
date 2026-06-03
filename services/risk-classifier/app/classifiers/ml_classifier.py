@@ -1,4 +1,6 @@
+import hashlib
 import os
+import httpx
 from openai import AsyncOpenAI
 from app.models import RiskType, ActionType
 
@@ -19,13 +21,67 @@ Respond in JSON with fields:
 
 IMPORTANT: This is for reference only and must not be used as a legal determination."""
 
-MODEL_VERSION = "gpt-4o-2024-05-13"
+GPT_MODEL_VERSION = "gpt-4o-2024-05-13"
+
+# CHECKLIST §9: identical comment text must not trigger a new API call
+# In-memory cache keyed by SHA-256 of the comment text
+# Phase 3+: replace with Redis for persistence across restarts
+_cache: dict[str, dict] = {}
+
+
+def _cache_key(text: str) -> str:
+    return hashlib.sha256(text.encode("utf-8")).hexdigest()
+
+
+async def _classify_with_kobert(text: str) -> dict | None:
+    """
+    Calls an external KoBERT/KoELECTRA inference endpoint if KOBERT_URL is configured.
+    Returns None if the endpoint is unavailable — caller falls back to GPT-4o.
+
+    Expected response schema from the KoBERT service:
+      { "legal_score": float, "brand_score": float, "urgency_score": float,
+        "risk_types": [...], "recommended_action": str, "model_version": str }
+    """
+    url = os.getenv("KOBERT_URL")
+    if not url:
+        return None
+
+    try:
+        async with httpx.AsyncClient(timeout=5.0) as http:
+            resp = await http.post(f"{url}/classify", json={"text": text})
+            resp.raise_for_status()
+            data = resp.json()
+            return {
+                "legal_score": float(data.get("legal_score", 0.0)),
+                "brand_score": float(data.get("brand_score", 0.0)),
+                "urgency_score": float(data.get("urgency_score", 0.0)),
+                "risk_types": [RiskType(rt) for rt in data.get("risk_types", []) if rt in RiskType.__members__],
+                "recommended_action": ActionType(data.get("recommended_action", "IGNORE")),
+                "model_version": data.get("model_version", "kobert-unknown"),
+            }
+    except Exception:
+        return None
 
 
 async def classify_with_ml(text: str) -> dict:
+    key = _cache_key(text)
+    if key in _cache:
+        return _cache[key]
+
+    # CHECKLIST §9: Korean-language comments route through KoBERT before GPT-4o
+    result = await _classify_with_kobert(text)
+
+    if result is None:
+        result = await _classify_with_gpt4o(text)
+
+    _cache[key] = result
+    return result
+
+
+async def _classify_with_gpt4o(text: str) -> dict:
     try:
         response = await client.chat.completions.create(
-            model=MODEL_VERSION,
+            model=GPT_MODEL_VERSION,
             messages=[
                 {"role": "system", "content": SYSTEM_PROMPT},
                 {"role": "user", "content": f"Comment: {text}"},
@@ -34,22 +90,21 @@ async def classify_with_ml(text: str) -> dict:
             temperature=0.1,
         )
         import json
-        result = json.loads(response.choices[0].message.content)
+        data = json.loads(response.choices[0].message.content)
         return {
-            "legal_score": float(result.get("legal_score", 0.0)),
-            "brand_score": float(result.get("brand_score", 0.0)),
-            "urgency_score": float(result.get("urgency_score", 0.0)),
-            "risk_types": [RiskType(rt) for rt in result.get("risk_types", []) if rt in RiskType.__members__],
-            "recommended_action": ActionType(result.get("recommended_action", "IGNORE")),
-            "model_version": MODEL_VERSION,
+            "legal_score": float(data.get("legal_score", 0.0)),
+            "brand_score": float(data.get("brand_score", 0.0)),
+            "urgency_score": float(data.get("urgency_score", 0.0)),
+            "risk_types": [RiskType(rt) for rt in data.get("risk_types", []) if rt in RiskType.__members__],
+            "recommended_action": ActionType(data.get("recommended_action", "IGNORE")),
+            "model_version": GPT_MODEL_VERSION,
         }
     except Exception:
-        # Fallback returns empty - caller should use rule engine
         return {
             "legal_score": 0.0,
             "brand_score": 0.0,
             "urgency_score": 0.0,
             "risk_types": [],
             "recommended_action": ActionType.IGNORE,
-            "model_version": MODEL_VERSION,
+            "model_version": GPT_MODEL_VERSION,
         }

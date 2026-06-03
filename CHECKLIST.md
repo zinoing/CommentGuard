@@ -9,7 +9,9 @@
 
 - [x] Have you read `CLAUDE.md`?
 - [x] Have you read `DESIGN.md`?
+- [x] Have you read `CommentGuard_Development_Plan_v2.md`? (Architecture, Sprint Plan, Risk Mitigations)
 - [ ] Is the feature in scope for the **current sprint**? (check `CLAUDE.md` § Current Phase)
+- [ ] Is this a Phase 2+ feature being implemented in Phase 1? If yes, stop — add schema stub only, no logic.
 
 ---
 
@@ -18,6 +20,7 @@
 > Applies to: Collector Service, Evidence Service, any code that touches S3 or EvidencePackage
 
 - [x] Snapshot is written to S3 **before** any classification or action runs
+- [x] `Comment.snapshot_s3_key` (S3 object key) is stored in DB alongside `snapshot_hash`
 - [x] SHA-256 hash is computed at ingest and stored **separately** from the file
 - [x] Hash is verified on every read (not just on write)
 - [x] S3 bucket has Object Lock (WORM, Compliance Mode) — never use Governance Mode for evidence buckets
@@ -27,6 +30,7 @@
   - [x] Chain of custody log page
   - [x] Checksum block (hash + algorithm + timestamp)
   - [x] Applicable legal statute references
+- [x] `EvidencePackage.custody_log_s3_key` points to S3 — custody log is stored immutably in S3, not only in DB
 
 ---
 
@@ -82,6 +86,9 @@
   - `mcn_id`
   - Any field that could identify a subscriber or commenter
 - [x] k-anonymity threshold enforced: a pattern is only written when derived from ≥ 50 distinct channels
+- [x] `AccountPattern` (MVP) does not store raw IP — only `ip_cluster_id` (anonymized cluster token)
+- [x] `AccountPattern` fields limited to: `author_id`, `comment_count_30d`, `is_new_account`, `ip_cluster_id`, `flagged_at` — no PII beyond author handle
+- [x] Phase 2 entities (`Case`, `LawFirmShareLink`, `Campaign`) are schema-stubbed only in Phase 1 — no business logic wired
 - [x] New entity added to `docs/DATA_MODEL.md` before the migration is merged
 
 ---
@@ -119,6 +126,7 @@
 
 - [x] All calls are within official API permissions — no scraping
 - [x] Quota usage is tracked per API credential account
+- [x] Multiple API credential accounts configured — quota exhaustion triggers automatic rotation to next account
 - [x] Fallback to rule-engine-only mode is implemented if API response schema changes
   (scores flagged as `"provisional": true` in fallback mode)
 - [x] API policy change detection: if required fields are missing from response → alert ops, do not silently fail
@@ -134,6 +142,9 @@
 - [x] Rule engine override path is functional — ML score can be overridden by rule engine for legal statute keywords
 - [x] No classification result is surfaced as a legal determination — always labeled as reference only
 - [x] Monthly accuracy audit query exists (confirmed legal cases vs. classification result at time of incident)
+- [x] GPT-4o calls are deduplicated — identical comment text does not trigger a new API call (cached by content hash)
+- [x] Korean-language comments route through KoBERT / KoELECTRA inference before rule engine arbitration — not skipped
+- [x] Account anomaly detection (coordinated attack signals) runs via `AccountPattern` — `is_new_account` and `ip_cluster_id` populated at ingest
 
 ---
 
@@ -146,6 +157,7 @@
 - [x] MFA enforced for all operator accounts — no bypass path in code
 - [x] No secrets, API keys, or credentials in source code or logs
 - [ ] OWASP Top 10 checklist reviewed for any new external-facing endpoint
+- [ ] **GA gate:** External penetration test completed before public launch — do not ship to GA without sign-off
 
 ---
 
@@ -153,8 +165,10 @@
 
 > Applies to: all PRs
 
-- [x] Unit test coverage ≥ 80% for changed files
+- [x] Unit test coverage ≥ 80% for changed files (Jest for frontend, Pytest for Python services)
 - [ ] Integration test covers the full flow for any new service interaction
+- [ ] API integration tests use **Supertest** — not mocked HTTP
+- [ ] Integration tests wrap DB writes in a transaction and roll back after each test — no persistent test data
 - [ ] E2E test updated if a user-facing flow changed:
   `collection → classification → Case creation → approval → PDF generation → share link`
 - [ ] Load test baseline is not regressed (P99 < 2s at 100K comments/hour)

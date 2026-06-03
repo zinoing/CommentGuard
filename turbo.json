@@ -1,6 +1,6 @@
 {
   "$schema": "https://turbo.build/schema.json",
-  "globalEnv": ["NODE_ENV", "DATABASE_URL", "REDIS_URL", "KAFKA_BROKERS"],
+  "globalEnv": ["NODE_ENV", "DATABASE_URL"],
   "pipeline": {
     "build": {
       "dependsOn": ["^build"],

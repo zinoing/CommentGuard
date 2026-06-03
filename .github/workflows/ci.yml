@@ -11,13 +11,16 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v3
+        with:
+          version: 9
       - uses: actions/setup-node@v4
         with:
           node-version: "20"
-          cache: "npm"
-      - run: npm ci
-      - run: npm run lint
-      - run: npm run typecheck
+          cache: "pnpm"
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm run lint
+      - run: pnpm run typecheck
 
   test-node-services:
     runs-on: ubuntu-latest
@@ -40,15 +43,18 @@ jobs:
       JWT_SECRET: test-secret-do-not-use-in-production
     steps:
       - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v3
+        with:
+          version: 9
       - uses: actions/setup-node@v4
         with:
           node-version: "20"
-          cache: "npm"
-      - run: npm ci
-      - run: npm run db:generate
-      - run: npm run db:migrate
+          cache: "pnpm"
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm run db:generate
+      - run: pnpm run db:migrate
       - name: Run tests with coverage gate
-        run: npm run test -- --coverage --coverageThreshold='{"global":{"lines":80}}'
+        run: pnpm run test -- --coverage --coverageThreshold='{"global":{"lines":80}}'
 
   test-python-classifier:
     runs-on: ubuntu-latest
@@ -65,8 +71,23 @@ jobs:
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        service: [bff-api, collector-service, evidence-service, action-service, case-management]
+        include:
+          - service: bff-api
+            dockerfile: services/bff-api/Dockerfile
+            context: .
+          - service: collector-service
+            dockerfile: services/collector-service/Dockerfile
+            context: .
+          - service: evidence-service
+            dockerfile: services/evidence-service/Dockerfile
+            context: .
+          - service: action-service
+            dockerfile: services/action-service/Dockerfile
+            context: .
+          - service: risk-classifier
+            dockerfile: services/risk-classifier/Dockerfile
+            context: services/risk-classifier
     steps:
       - uses: actions/checkout@v4
       - name: Build ${{ matrix.service }}
-        run: docker build services/${{ matrix.service }} -t commentguard/${{ matrix.service }}:test
+        run: docker build -f ${{ matrix.dockerfile }} ${{ matrix.context }} -t commentguard/${{ matrix.service }}:test

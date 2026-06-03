@@ -14,7 +14,6 @@
     "@aws-sdk/client-s3": "^3.582.0",
     "@aws-sdk/lib-storage": "^3.582.0",
     "axios": "^1.7.2",
-    "kafkajs": "^2.2.4",
     "crypto": "^1.0.1"
   },
   "devDependencies": {

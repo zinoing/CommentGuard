@@ -1,5 +1,8 @@
 version: "3.9"
 
+# Phase 1 (MVP) stack — local only
+# Phase 3+: Redis, Kafka, Elasticsearch are NOT included here
+
 services:
   postgres:
     image: postgres:15-alpine
@@ -17,52 +20,6 @@ services:
       timeout: 5s
       retries: 5
 
-  redis:
-    image: redis:7-alpine
-    ports:
-      - "6379:6379"
-    volumes:
-      - redis_data:/data
-    healthcheck:
-      test: ["CMD", "redis-cli", "ping"]
-      interval: 5s
-      timeout: 3s
-      retries: 5
-
-  zookeeper:
-    image: confluentinc/cp-zookeeper:7.5.0
-    environment:
-      ZOOKEEPER_CLIENT_PORT: 2181
-      ZOOKEEPER_TICK_TIME: 2000
-    ports:
-      - "2181:2181"
-
-  kafka:
-    image: confluentinc/cp-kafka:7.5.0
-    depends_on:
-      - zookeeper
-    ports:
-      - "9092:9092"
-    environment:
-      KAFKA_BROKER_ID: 1
-      KAFKA_ZOOKEEPER_CONNECT: zookeeper:2181
-      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://localhost:9092,PLAINTEXT_INTERNAL://kafka:29092
-      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: PLAINTEXT:PLAINTEXT,PLAINTEXT_INTERNAL:PLAINTEXT
-      KAFKA_INTER_BROKER_LISTENER_NAME: PLAINTEXT_INTERNAL
-      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
-      KAFKA_AUTO_CREATE_TOPICS_ENABLE: "true"
-
-  elasticsearch:
-    image: docker.elastic.co/elasticsearch/elasticsearch:8.11.0
-    environment:
-      - discovery.type=single-node
-      - xpack.security.enabled=false
-      - ES_JAVA_OPTS=-Xms512m -Xmx512m
-    ports:
-      - "9200:9200"
-    volumes:
-      - es_data:/usr/share/elasticsearch/data
-
   localstack:
     image: localstack/localstack:3.0
     ports:
@@ -74,8 +31,100 @@ services:
     volumes:
       - localstack_data:/var/lib/localstack
 
+  risk-classifier:
+    build:
+      context: services/risk-classifier
+      dockerfile: Dockerfile
+    ports:
+      - "8001:8001"
+    environment:
+      OPENAI_API_KEY: ${OPENAI_API_KEY}
+
+  collector-service:
+    build:
+      context: .
+      dockerfile: services/collector-service/Dockerfile
+    ports:
+      - "3002:3002"
+    environment:
+      DATABASE_URL: postgresql://commentguard:commentguard_dev@postgres:5432/commentguard
+      YOUTUBE_API_KEY: ${YOUTUBE_API_KEY}
+      S3_EVIDENCE_BUCKET: commentguard-evidence
+      AWS_ENDPOINT_URL: http://localstack:4566
+      AWS_REGION: ap-northeast-2
+      AWS_ACCESS_KEY_ID: test
+      AWS_SECRET_ACCESS_KEY: test
+      CLASSIFIER_URL: http://risk-classifier:8001
+    depends_on:
+      postgres:
+        condition: service_healthy
+      localstack:
+        condition: service_started
+      risk-classifier:
+        condition: service_started
+
+  evidence-service:
+    build:
+      context: .
+      dockerfile: services/evidence-service/Dockerfile
+    ports:
+      - "3003:3003"
+    environment:
+      DATABASE_URL: postgresql://commentguard:commentguard_dev@postgres:5432/commentguard
+      S3_EVIDENCE_BUCKET: commentguard-evidence
+      AWS_ENDPOINT_URL: http://localstack:4566
+      AWS_REGION: ap-northeast-2
+      AWS_ACCESS_KEY_ID: test
+      AWS_SECRET_ACCESS_KEY: test
+    depends_on:
+      postgres:
+        condition: service_healthy
+      localstack:
+        condition: service_started
+
+  action-service:
+    build:
+      context: .
+      dockerfile: services/action-service/Dockerfile
+    ports:
+      - "3004:3004"
+    environment:
+      DATABASE_URL: postgresql://commentguard:commentguard_dev@postgres:5432/commentguard
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  bff-api:
+    build:
+      context: .
+      dockerfile: services/bff-api/Dockerfile
+    ports:
+      - "3001:3001"
+    environment:
+      DATABASE_URL: postgresql://commentguard:commentguard_dev@postgres:5432/commentguard
+      JWT_SECRET: ${JWT_SECRET}
+      ALLOWED_ORIGINS: http://localhost:3000
+      AWS_ENDPOINT_URL: http://localstack:4566
+      AWS_REGION: ap-northeast-2
+      AWS_ACCESS_KEY_ID: test
+      AWS_SECRET_ACCESS_KEY: test
+    depends_on:
+      postgres:
+        condition: service_healthy
+      localstack:
+        condition: service_started
+
+  web:
+    build:
+      context: .
+      dockerfile: apps/web/Dockerfile
+    ports:
+      - "3000:3000"
+    environment:
+      NEXT_PUBLIC_BFF_URL: http://localhost:3001
+    depends_on:
+      - bff-api
+
 volumes:
   postgres_data:
-  redis_data:
-  es_data:
   localstack_data:

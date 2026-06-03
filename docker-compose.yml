@@ -20,17 +20,6 @@ services:
       timeout: 5s
       retries: 5
 
-  localstack:
-    image: localstack/localstack:3.0
-    ports:
-      - "4566:4566"
-    environment:
-      - SERVICES=s3,kms
-      - DEFAULT_REGION=ap-northeast-2
-      - LOCALSTACK_VOLUME_DIR=/var/lib/localstack
-    volumes:
-      - localstack_data:/var/lib/localstack
-
   risk-classifier:
     build:
       context: services/risk-classifier
@@ -49,17 +38,14 @@ services:
     environment:
       DATABASE_URL: postgresql://commentguard:commentguard_dev@postgres:5432/commentguard
       YOUTUBE_API_KEY: ${YOUTUBE_API_KEY}
-      S3_EVIDENCE_BUCKET: commentguard-evidence
-      AWS_ENDPOINT_URL: http://localstack:4566
-      AWS_REGION: ap-northeast-2
-      AWS_ACCESS_KEY_ID: test
-      AWS_SECRET_ACCESS_KEY: test
+      R2_BUCKET_NAME: ${R2_BUCKET_NAME}
+      R2_ENDPOINT_URL: ${R2_ENDPOINT_URL}
+      R2_ACCESS_KEY_ID: ${R2_ACCESS_KEY_ID}
+      R2_SECRET_ACCESS_KEY: ${R2_SECRET_ACCESS_KEY}
       CLASSIFIER_URL: http://risk-classifier:8001
     depends_on:
       postgres:
         condition: service_healthy
-      localstack:
-        condition: service_started
       risk-classifier:
         condition: service_started
 
@@ -71,16 +57,13 @@ services:
       - "3003:3003"
     environment:
       DATABASE_URL: postgresql://commentguard:commentguard_dev@postgres:5432/commentguard
-      S3_EVIDENCE_BUCKET: commentguard-evidence
-      AWS_ENDPOINT_URL: http://localstack:4566
-      AWS_REGION: ap-northeast-2
-      AWS_ACCESS_KEY_ID: test
-      AWS_SECRET_ACCESS_KEY: test
+      R2_BUCKET_NAME: ${R2_BUCKET_NAME}
+      R2_ENDPOINT_URL: ${R2_ENDPOINT_URL}
+      R2_ACCESS_KEY_ID: ${R2_ACCESS_KEY_ID}
+      R2_SECRET_ACCESS_KEY: ${R2_SECRET_ACCESS_KEY}
     depends_on:
       postgres:
         condition: service_healthy
-      localstack:
-        condition: service_started
 
   action-service:
     build:
@@ -104,15 +87,9 @@ services:
       DATABASE_URL: postgresql://commentguard:commentguard_dev@postgres:5432/commentguard
       JWT_SECRET: ${JWT_SECRET}
       ALLOWED_ORIGINS: http://localhost:3000
-      AWS_ENDPOINT_URL: http://localstack:4566
-      AWS_REGION: ap-northeast-2
-      AWS_ACCESS_KEY_ID: test
-      AWS_SECRET_ACCESS_KEY: test
     depends_on:
       postgres:
         condition: service_healthy
-      localstack:
-        condition: service_started
 
   web:
     build:
@@ -127,4 +104,3 @@ services:
 
 volumes:
   postgres_data:
-  localstack_data:

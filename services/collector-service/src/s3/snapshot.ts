@@ -1,16 +1,20 @@
 import { S3Client, PutObjectCommand, GetObjectCommand } from "@aws-sdk/client-s3";
 import crypto from "crypto";
 
+// R2 is S3-compatible; endpoint_url points to the R2 bucket endpoint
 const s3 = new S3Client({
-  region: process.env.AWS_REGION ?? "ap-northeast-2",
-  endpoint: process.env.AWS_ENDPOINT_URL, // LocalStack in dev
-  forcePathStyle: !!process.env.AWS_ENDPOINT_URL,
+  region: "auto",
+  endpoint: process.env.R2_ENDPOINT_URL,
+  credentials: {
+    accessKeyId: process.env.R2_ACCESS_KEY_ID!,
+    secretAccessKey: process.env.R2_SECRET_ACCESS_KEY!,
+  },
 });
 
-const EVIDENCE_BUCKET = process.env.S3_EVIDENCE_BUCKET!;
+const EVIDENCE_BUCKET = process.env.R2_BUCKET_NAME!;
 
 export interface SnapshotResult {
-  s3Key: string;
+  r2Key: string;
   sha256Hash: string;
 }
 
@@ -24,36 +28,34 @@ export async function writeCommentSnapshot(
   const payload = JSON.stringify(rawData);
   const sha256Hash = crypto.createHash("sha256").update(payload).digest("hex");
 
-  const s3Key = `snapshots/${channelId}/${platformCommentId}/${Date.now()}.json`;
+  const r2Key = `snapshots/${channelId}/${platformCommentId}/${Date.now()}.json`;
 
   await s3.send(
     new PutObjectCommand({
       Bucket: EVIDENCE_BUCKET,
-      Key: s3Key,
+      Key: r2Key,
       Body: payload,
       ContentType: "application/json",
-      // Object Lock is configured at the bucket level (WORM, Compliance Mode)
-      // 30-day minimum retention enforced via bucket policy
     })
   );
 
-  return { s3Key, sha256Hash };
+  return { r2Key, sha256Hash };
 }
 
 export class SnapshotHashMismatchError extends Error {
-  constructor(s3Key: string) {
-    super(`Snapshot hash mismatch for key: ${s3Key}`);
+  constructor(r2Key: string) {
+    super(`Snapshot hash mismatch for key: ${r2Key}`);
     this.name = "SnapshotHashMismatchError";
   }
 }
 
 // CHECKLIST §1: hash verified on every read (not just on write)
 export async function readAndVerifySnapshot(
-  s3Key: string,
+  r2Key: string,
   expectedHash: string
 ): Promise<Record<string, unknown>> {
   const response = await s3.send(
-    new GetObjectCommand({ Bucket: EVIDENCE_BUCKET, Key: s3Key })
+    new GetObjectCommand({ Bucket: EVIDENCE_BUCKET, Key: r2Key })
   );
 
   const body = await response.Body!.transformToString("utf-8");

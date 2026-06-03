@@ -106,7 +106,7 @@ export async function shareLinksRoute(app: FastifyInstance) {
       },
       evidencePackages: shareLink.case.evidencePackages.map((ep) => ({
         id: ep.id,
-        pdfS3Key: ep.pdfS3Key,
+        pdfR2Key: ep.pdfR2Key,
         checksum: ep.checksum,
         checksumAlg: ep.checksumAlg,
         createdAt: ep.createdAt,

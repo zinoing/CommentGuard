@@ -17,20 +17,19 @@
 
 ## 1. Evidence Integrity
 
-> Applies to: Collector Service, Evidence Service, any code that touches S3 or EvidencePackage
+> Applies to: Collector Service, Evidence Service, any code that touches R2 or EvidencePackage
 
-- [x] Snapshot is written to S3 **before** any classification or action runs
-- [x] `Comment.snapshot_s3_key` (S3 object key) is stored in DB alongside `snapshot_hash`
+- [x] Snapshot is written to R2 **before** any classification or action runs
+- [x] `Comment.snapshot_r2_key` (R2 object key) is stored in DB alongside `snapshot_hash`
 - [x] SHA-256 hash is computed at ingest and stored **separately** from the file
 - [x] Hash is verified on every read (not just on write)
-- [x] S3 bucket has Object Lock (WORM, Compliance Mode) — never use Governance Mode for evidence buckets
-- [x] Minimum retention is set to 30 days — no code path can override this
+- [x] R2 bucket has server-side encryption enabled (Phase 1); S3 Object Lock (WORM) deferred to Phase 3
 - [x] EvidencePackage PDF includes:
   - [x] Incident timeline page
   - [x] Chain of custody log page
   - [x] Checksum block (hash + algorithm + timestamp)
   - [x] Applicable legal statute references
-- [x] `EvidencePackage.custody_log_s3_key` points to S3 — custody log is stored immutably in S3, not only in DB
+- [x] `EvidencePackage.custody_log_r2_key` points to R2 — custody log is stored immutably in R2, not only in DB
 
 ---
 
@@ -153,7 +152,7 @@
 > Applies to: all code, but especially auth, encryption, and external-facing endpoints
 
 - [x] TLS 1.3 enforced — no fallback to older TLS versions
-- [x] All evidence files and snapshots encrypted at rest via AWS KMS (AES-256)
+- [x] All evidence files and snapshots encrypted at rest via R2 server-side encryption (Phase 1); AWS KMS deferred to Phase 3
 - [x] MFA enforced for all operator accounts — no bypass path in code
 - [x] No secrets, API keys, or credentials in source code or logs
 - [ ] OWASP Top 10 checklist reviewed for any new external-facing endpoint

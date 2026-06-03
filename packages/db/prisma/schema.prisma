@@ -98,7 +98,7 @@ model Comment {
   platformCommentId   String
   text                String
   authorPlatformId    String
-  snapshotS3Key       String
+  snapshotR2Key       String
   snapshotHash        String          // SHA-256 of raw comment snapshot
   snapshotHashAlg     String          @default("sha256")
   createdAt           DateTime        @default(now())
@@ -171,8 +171,8 @@ model EvidencePackage {
   id                   String   @id @default(cuid())
   caseId               String
   case                 Case     @relation(fields: [caseId], references: [id])
-  pdfS3Key             String
-  custodyLogS3Key      String   // S3 key for immutable custody log file (CHECKLIST §1)
+  pdfR2Key             String
+  custodyLogR2Key      String   // R2 key for immutable custody log file (CHECKLIST §1)
   timelinePageIncluded Boolean  @default(false)
   checksum             String   // SHA-256 of the PDF
   checksumAlg          String   @default("sha256")

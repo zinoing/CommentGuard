@@ -37,16 +37,18 @@ cp .env.example .env
 - [ ] `OPENAI_API_KEY` 입력
 - [ ] `GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET` / `NEXTAUTH_SECRET` 입력
 
-### 1-3. LocalStack S3 버킷 초기화
+### 1-3. Cloudflare R2 버킷 초기화
 
-docker-compose up 이후 버킷을 수동으로 생성해야 합니다:
+Cloudflare 대시보드에서 R2 버킷을 생성하고 `.env`에 아래 값을 채워야 합니다:
 
 ```bash
-docker-compose up -d postgres localstack
-aws --endpoint-url=http://localhost:4566 s3 mb s3://commentguard-evidence-dev --region ap-northeast-2
+# Cloudflare 대시보드 → R2 → 버킷 생성
+# 버킷명: commentguard-evidence
+# R2 API 토큰 생성 후 아래 값 입력
 ```
 
-- [ ] LocalStack S3 버킷 생성 완료
+- [ ] Cloudflare R2 버킷 `commentguard-evidence` 생성 완료
+- [ ] `R2_ACCOUNT_ID`, `R2_ACCESS_KEY_ID`, `R2_SECRET_ACCESS_KEY`, `R2_ENDPOINT_URL` `.env`에 입력 완료
 
 ### 1-4. 로컬 스택 동작 검증
 
@@ -73,6 +75,9 @@ pnpm --filter @commentguard/web exec playwright install chromium
 
 ## 2. 외부 계정 / 키 발급
 
+- [ ] **Cloudflare R2** — Cloudflare 계정 생성 → R2 버킷 생성 → API 토큰 발급
+  - 버킷 경로: `/snapshots`, `/evidence-pdf`
+  - `.env`에 `R2_ACCOUNT_ID`, `R2_ACCESS_KEY_ID`, `R2_SECRET_ACCESS_KEY`, `R2_ENDPOINT_URL` 입력
 - [ ] **YouTube Data API v3** — Google Cloud Console에서 활성화, API 키 발급
   - Quota 기본 10,000 units/day → 필요 시 증설 신청
   - `commentThreads.list` 권한 확인
@@ -113,8 +118,8 @@ pnpm --filter @commentguard/web exec playwright install chromium
 
 ## 5. GA 출시 전 (Phase 1 이후)
 
-- [ ] AWS 실계정 S3 버킷 생성 + Object Lock Compliance Mode 활성화 (30일 최소 보존)
-- [ ] AWS KMS 키 생성 (AES-256, 키 자동 로테이션 활성화)
+- [ ] **Phase 3**: AWS S3 버킷 생성 + Object Lock Compliance Mode 활성화 (30일 최소 보존) — R2는 Object Lock 미지원
+- [ ] **Phase 3**: AWS KMS 키 생성 (AES-256) — Phase 1은 R2 서버사이드 암호화로 충분
 - [ ] 외부 보안 업체 Penetration Test 완료 — CHECKLIST §10 GA gate
 - [ ] MFA 강제 적용 확인 (모든 운영자 계정)
 

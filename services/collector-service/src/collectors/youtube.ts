@@ -64,7 +64,7 @@ export async function collectYouTubeComments(channelId: string, pageToken?: stri
     };
 
     // CHECKLIST §1: write snapshot FIRST, before any classification or action
-    const { s3Key, sha256Hash } = await writeCommentSnapshot(channelId, item.id, rawData);
+    const { r2Key, sha256Hash } = await writeCommentSnapshot(channelId, item.id, rawData);
 
     const comment = await prisma.comment.upsert({
       where: { channelId_platformCommentId: { channelId, platformCommentId: item.id } },
@@ -73,7 +73,7 @@ export async function collectYouTubeComments(channelId: string, pageToken?: stri
         platformCommentId: item.id,
         text: rawData.text,
         authorPlatformId: rawData.authorPlatformId,
-        snapshotS3Key: s3Key,
+        snapshotR2Key: r2Key,
         snapshotHash: sha256Hash,
       },
       update: {},

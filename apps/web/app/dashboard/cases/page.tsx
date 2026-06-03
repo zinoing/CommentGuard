@@ -13,7 +13,7 @@ interface Case {
 
 interface EvidencePackage {
   id: string;
-  pdfS3Key: string;
+  pdfR2Key: string;
   checksum: string;
   createdAt: string;
 }

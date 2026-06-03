@@ -82,7 +82,7 @@ Raw comment data captured at ingest. Never updated after creation.
 | `platformCommentId` | String | External ID from the platform |
 | `text` | String | Raw comment text |
 | `authorPlatformId` | String | Platform author ID (not a user in our system) |
-| `snapshotS3Key` | String | S3 object key of the raw snapshot |
+| `snapshotR2Key` | String | R2 object key of the raw snapshot |
 | `snapshotHash` | String | SHA-256 of the snapshot content — stored separately from the file |
 | `snapshotHashAlg` | String | Always `sha256` |
 | `createdAt` | DateTime | Ingest timestamp |
@@ -173,7 +173,8 @@ Generated PDF evidence package. `caseId` is required — orphaned packages must 
 |---|---|---|
 | `id` | cuid | PK |
 | `caseId` | FK Case | **Required — no orphaned packages** |
-| `pdfS3Key` | String | S3 object key |
+| `pdfR2Key` | String | R2 object key of the PDF |
+| `custodyLogR2Key` | String | R2 object key of the immutable custody log file |
 | `checksum` | String | SHA-256 of the PDF binary |
 | `checksumAlg` | String | Always `sha256` |
 | `createdById` | String | User ID who triggered generation |

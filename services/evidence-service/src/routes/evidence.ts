@@ -6,12 +6,15 @@ import { S3Client, PutObjectCommand } from "@aws-sdk/client-s3";
 import crypto from "crypto";
 
 const s3 = new S3Client({
-  region: process.env.AWS_REGION ?? "ap-northeast-2",
-  endpoint: process.env.AWS_ENDPOINT_URL,
-  forcePathStyle: !!process.env.AWS_ENDPOINT_URL,
+  region: "auto",
+  endpoint: process.env.R2_ENDPOINT_URL,
+  credentials: {
+    accessKeyId: process.env.R2_ACCESS_KEY_ID!,
+    secretAccessKey: process.env.R2_SECRET_ACCESS_KEY!,
+  },
 });
 
-const BUCKET = process.env.S3_EVIDENCE_BUCKET!;
+const BUCKET = process.env.R2_BUCKET_NAME!;
 
 export async function evidenceRoute(app: FastifyInstance) {
   // CHECKLIST §1: hash verified on every read
@@ -21,11 +24,11 @@ export async function evidenceRoute(app: FastifyInstance) {
     const comment = await prisma.comment.findUniqueOrThrow({ where: { id: commentId } });
 
     try {
-      const data = await readAndVerifySnapshot(comment.snapshotS3Key, comment.snapshotHash);
+      const data = await readAndVerifySnapshot(comment.snapshotR2Key, comment.snapshotHash);
       return { commentId, data, hashVerified: true };
     } catch (err) {
       if (err instanceof SnapshotHashMismatchError) {
-        app.log.error({ commentId, s3Key: comment.snapshotS3Key }, "INTEGRITY VIOLATION: snapshot hash mismatch");
+        app.log.error({ commentId, r2Key: comment.snapshotR2Key }, "INTEGRITY VIOLATION: snapshot hash mismatch");
         return reply.code(500).send({ error: "Evidence integrity check failed — hash mismatch detected" });
       }
       throw err;
@@ -50,25 +53,25 @@ export async function evidenceRoute(app: FastifyInstance) {
     const pdfBuffer = await generateEvidencePDF(caseId, commentIds);
     const checksum = crypto.createHash("sha256").update(pdfBuffer).digest("hex");
 
-    const pdfS3Key = `evidence/${caseId}/${Date.now()}.pdf`;
-    await s3.send(new PutObjectCommand({ Bucket: BUCKET, Key: pdfS3Key, Body: pdfBuffer, ContentType: "application/pdf" }));
+    const pdfR2Key = `evidence/${caseId}/${Date.now()}.pdf`;
+    await s3.send(new PutObjectCommand({ Bucket: BUCKET, Key: pdfR2Key, Body: pdfBuffer, ContentType: "application/pdf" }));
 
-    // CHECKLIST §1: custody log stored immutably in S3 (custodyLogS3Key)
+    // CHECKLIST §1: custody log stored immutably in R2 (custodyLogR2Key)
     const custodyLogs = await prisma.custodyLog.findMany({
       where: { caseId },
       include: { actor: { select: { email: true, name: true } } },
       orderBy: { createdAt: "asc" },
     });
     const custodyLogPayload = JSON.stringify(custodyLogs);
-    const custodyLogS3Key = `evidence/${caseId}/custody-log-${Date.now()}.json`;
-    await s3.send(new PutObjectCommand({ Bucket: BUCKET, Key: custodyLogS3Key, Body: custodyLogPayload, ContentType: "application/json" }));
+    const custodyLogR2Key = `evidence/${caseId}/custody-log-${Date.now()}.json`;
+    await s3.send(new PutObjectCommand({ Bucket: BUCKET, Key: custodyLogR2Key, Body: custodyLogPayload, ContentType: "application/json" }));
 
     // CHECKLIST §2: case_id required, no orphaned packages
     const pkg = await prisma.evidencePackage.create({
       data: {
         caseId,
-        pdfS3Key,
-        custodyLogS3Key,
+        pdfR2Key,
+        custodyLogR2Key,
         timelinePageIncluded: true,
         checksum,
         checksumAlg: "sha256",
@@ -82,11 +85,11 @@ export async function evidenceRoute(app: FastifyInstance) {
         actorId: createdById,
         action: "EVIDENCE_PACKAGE_CREATED",
         ipAddress: req.ip,
-        metadata: { packageId: pkg.id, checksum, pdfS3Key, custodyLogS3Key },
+        metadata: { packageId: pkg.id, checksum, pdfR2Key, custodyLogR2Key },
       },
     });
 
-    return reply.code(201).send({ id: pkg.id, checksum, pdfS3Key, custodyLogS3Key });
+    return reply.code(201).send({ id: pkg.id, checksum, pdfR2Key, custodyLogR2Key });
   });
 
   // List evidence packages for a case

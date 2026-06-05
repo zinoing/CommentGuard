@@ -58,3 +58,8 @@ packages/db/node_modules/
 
 # Turbo
 .turbo/
+
+# Internal planning docs (not for version control)
+CommentGuard_Dev_Checklist_v2.md
+CommentGuard_Development_Plan_v3.md
+CommentGuard_Service_Plan_v5.md

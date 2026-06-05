@@ -3,6 +3,9 @@ import os
 import httpx
 from openai import AsyncOpenAI
 from app.models import RiskType, ActionType
+from dotenv import load_dotenv
+
+load_dotenv()
 
 client = AsyncOpenAI(api_key=os.getenv("OPENAI_API_KEY"))
 
@@ -17,7 +20,7 @@ Respond in JSON with fields:
 - brand_score (0.0-1.0)
 - urgency_score (0.0-1.0)
 - risk_types: array of ["LEGAL_THREAT", "HATE_SPEECH", "HARASSMENT", "SPAM", "COORDINATED_ATTACK"]
-- recommended_action: one of ["IGNORE", "HIDE", "DELETE", "PRESERVE_AND_DELETE"]
+- recommended_action: "REQUEST_LEGAL_REVIEW" if legal review is warranted, otherwise null
 
 IMPORTANT: This is for reference only and must not be used as a legal determination."""
 
@@ -33,6 +36,12 @@ def _cache_key(text: str) -> str:
     return hashlib.sha256(text.encode("utf-8")).hexdigest()
 
 
+def _parse_recommended_action(value: object) -> ActionType | None:
+    if value == "REQUEST_LEGAL_REVIEW":
+        return ActionType.REQUEST_LEGAL_REVIEW
+    return None
+
+
 async def _classify_with_kobert(text: str) -> dict | None:
     """
     Calls an external KoBERT/KoELECTRA inference endpoint if KOBERT_URL is configured.
@@ -40,7 +49,8 @@ async def _classify_with_kobert(text: str) -> dict | None:
 
     Expected response schema from the KoBERT service:
       { "legal_score": float, "brand_score": float, "urgency_score": float,
-        "risk_types": [...], "recommended_action": str, "model_version": str }
+        "risk_types": [...], "recommended_action": "REQUEST_LEGAL_REVIEW" | null,
+        "model_version": str }
     """
     url = os.getenv("KOBERT_URL")
     if not url:
@@ -56,7 +66,7 @@ async def _classify_with_kobert(text: str) -> dict | None:
                 "brand_score": float(data.get("brand_score", 0.0)),
                 "urgency_score": float(data.get("urgency_score", 0.0)),
                 "risk_types": [RiskType(rt) for rt in data.get("risk_types", []) if rt in RiskType.__members__],
-                "recommended_action": ActionType(data.get("recommended_action", "IGNORE")),
+                "recommended_action": _parse_recommended_action(data.get("recommended_action")),
                 "model_version": data.get("model_version", "kobert-unknown"),
             }
     except Exception:
@@ -96,7 +106,7 @@ async def _classify_with_gpt4o(text: str) -> dict:
             "brand_score": float(data.get("brand_score", 0.0)),
             "urgency_score": float(data.get("urgency_score", 0.0)),
             "risk_types": [RiskType(rt) for rt in data.get("risk_types", []) if rt in RiskType.__members__],
-            "recommended_action": ActionType(data.get("recommended_action", "IGNORE")),
+            "recommended_action": _parse_recommended_action(data.get("recommended_action")),
             "model_version": GPT_MODEL_VERSION,
         }
     except Exception:
@@ -105,6 +115,6 @@ async def _classify_with_gpt4o(text: str) -> dict:
             "brand_score": 0.0,
             "urgency_score": 0.0,
             "risk_types": [],
-            "recommended_action": ActionType.IGNORE,
+            "recommended_action": None,
             "model_version": GPT_MODEL_VERSION,
         }

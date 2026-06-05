@@ -5,7 +5,7 @@ export interface RiskScoreResponse {
   legalScore: number;
   brandScore: number;
   urgencyScore: number;
-  recommendedAction: "IGNORE" | "HIDE" | "DELETE" | "PRESERVE_AND_DELETE";
+  recommendedAction: "REQUEST_LEGAL_REVIEW" | null;
   riskTypes: string[];
   modelVersion: string;
   // CHECKLIST §3: must always be present

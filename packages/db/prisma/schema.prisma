@@ -20,11 +20,10 @@ enum CaseStatus {
   CLOSED
 }
 
+// CHECKLIST §3: only REQUEST_LEGAL_REVIEW is a valid CommentGuard action type.
+// OPEN_ON_PLATFORM is a UI-only redirect with no DB write — not an enum value.
 enum ActionType {
-  IGNORE
-  HIDE
-  DELETE
-  PRESERVE_AND_DELETE
+  REQUEST_LEGAL_REVIEW
 }
 
 enum ActionStatus {
@@ -117,7 +116,7 @@ model RiskAssessment {
   legalScore          Float
   brandScore          Float
   urgencyScore        Float
-  recommendedAction   ActionType
+  recommendedAction   ActionType?
   modelVersion        String
   classification      String      @default("reference_only")
   isProvisional       Boolean     @default(false)

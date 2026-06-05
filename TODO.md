@@ -1,122 +1,65 @@
-# CommentGuard — Phase 1 남은 작업
+# CommentGuard — 수동 작업 목록
 
-> 이 파일은 코드 자동화로 처리할 수 없는 작업들 목록입니다.
+> 직접 해야 하는 작업만 포함합니다. Claude Code가 처리할 수 있는 항목은 [CHECKLIST.md](CHECKLIST.md) § Phase 0에 있습니다.
 > 완료 시 `[x]`로 표시하세요.
 
 ---
 
-## 1. 지금 당장 실행해야 할 것
+## Phase 0 — 환경 세팅
 
-### 1-1. 의존성 / 스키마 동기화
+### 외부 계정 / API 키 발급
 
-```bash
-# Prisma migration 적용 (DB 실행 중이어야 함)
-pnpm --filter @commentguard/db exec prisma migrate deploy
-
-# Prisma Client 재생성
-pnpm run db:generate
-```
-
-- [x] `pnpm install` 실행 완료
-- [x] Prisma migration 파일 생성 완료 (`20260603000001_phase1_account_pattern_evidence_fields`)
-- [ ] Prisma migration DB 적용 (`prisma migrate deploy`) — **DB 실행 후 수동 실행 필요**
-- [ ] `pnpm run db:generate` 실행 완료
-
-### 1-2. 환경변수 파일 설정
-
-```bash
-cp .env.example .env
-# .env 열어서 아래 값들 실제로 채우기
-```
-
-- [ ] `JWT_SECRET` 생성 및 입력
-  ```bash
-  node -e "console.log(require('crypto').randomBytes(48).toString('hex'))"
-  ```
-- [ ] `YOUTUBE_API_KEY` 입력
-- [ ] `OPENAI_API_KEY` 입력
-- [ ] `GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET` / `NEXTAUTH_SECRET` 입력
-
-### 1-3. Cloudflare R2 버킷 초기화
-
-Cloudflare 대시보드에서 R2 버킷을 생성하고 `.env`에 아래 값을 채워야 합니다:
-
-```bash
-# Cloudflare 대시보드 → R2 → 버킷 생성
-# 버킷명: commentguard-evidence
-# R2 API 토큰 생성 후 아래 값 입력
-```
-
-- [ ] Cloudflare R2 버킷 `commentguard-evidence` 생성 완료
-- [ ] `R2_ACCOUNT_ID`, `R2_ACCESS_KEY_ID`, `R2_SECRET_ACCESS_KEY`, `R2_ENDPOINT_URL` `.env`에 입력 완료
-
-### 1-4. 로컬 스택 동작 검증
-
-```bash
-docker-compose up
-curl http://localhost:3001/health   # bff-api
-curl http://localhost:8001/health   # risk-classifier
-curl http://localhost:3002/health   # collector-service
-curl http://localhost:3003/health   # evidence-service
-curl http://localhost:3004/health   # action-service
-```
-
-- [ ] 전체 서비스 health check 통과
-
-### 1-5. Playwright 브라우저 설치
-
-```bash
-pnpm --filter @commentguard/web exec playwright install chromium
-```
-
-- [ ] Playwright 브라우저 설치 완료
-
----
-
-## 2. 외부 계정 / 키 발급
-
-- [ ] **Cloudflare R2** — Cloudflare 계정 생성 → R2 버킷 생성 → API 토큰 발급
-  - 버킷 경로: `/snapshots`, `/evidence-pdf`
-  - `.env`에 `R2_ACCOUNT_ID`, `R2_ACCESS_KEY_ID`, `R2_SECRET_ACCESS_KEY`, `R2_ENDPOINT_URL` 입력
-- [ ] **YouTube Data API v3** — Google Cloud Console에서 활성화, API 키 발급
+- [X] **YouTube Data API v3** — Google Cloud Console에서 활성화, API 키 발급
   - Quota 기본 10,000 units/day → 필요 시 증설 신청
   - `commentThreads.list` 권한 확인
   - 채널별 OAuth token → `.env`에 `YOUTUBE_OAUTH_TOKEN_<CREDENTIAL_REF>` 형태로 등록
-- [ ] **OpenAI API** — 계정 생성, `gpt-4o` 접근 가능한 플랜 확인, API 키 발급
-- [ ] **Google OAuth** — Google Cloud Console → OAuth 2.0 크레덴셜 생성
+- [X] **OpenAI API** — 계정 생성, `gpt-4o` 접근 가능한 플랜 확인, API 키 발급
+- [X] **Google OAuth 2.0** — Google Cloud Console → OAuth 2.0 크레덴셜 생성
   - Authorized redirect URIs: `http://localhost:3000/api/auth/callback/google`
   - 운영 도메인 추가 예정
 
+### .env 값 입력
+
+- [X] `YOUTUBE_API_KEY` 입력
+- [X] `OPENAI_API_KEY` 입력
+- [X] `GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET` / `NEXTAUTH_SECRET` 입력
+
+### Cloudflare R2 버킷 생성
+
+- [X] Cloudflare 대시보드 → R2 → `commentguard-evidence` 버킷 생성
+  - 경로 구조: `/snapshots`, `/evidence-pdf`
+- [X] R2 API 토큰 발급 → `.env`에 `R2_ACCOUNT_ID`, `R2_ACCESS_KEY_ID`, `R2_SECRET_ACCESS_KEY`, `R2_ENDPOINT_URL` 입력
+
+### 배포 연결
+
+- [ ] **Vercel** — `apps/web` 프로젝트 연결, git push → 자동 배포 확인
+- [ ] **Railway** — 프로젝트 생성, 각 서비스 환경변수 등록
+  - 대상 서비스: `bff-api`, `collector-service`, `evidence-service`, `action-service`, `risk-classifier`
+
 ---
 
-## 3. 남은 구현 항목
+## KoBERT 모델 호스팅 결정 (Phase 2)
 
-### KoBERT 모델 호스팅
-
-- [ ] KoBERT / KoELECTRA 모델 fine-tuning 및 호스팅 환경 결정 (HuggingFace Hub 또는 자체 서버)
-  - 모델 서버 기동 후 `.env`에 `KOBERT_URL=http://<host>/` 설정하면 자동 연동됨
-  - 미설정 시 GPT-4o로 자동 fallback (현재 동작 중)
+- [ ] 호스팅 환경 결정 (HuggingFace Hub / 자체 서버)
+  - 결정 후 `.env`에 `KOBERT_URL=http://<host>/` 설정
+  - 미설정 시 GPT-4o fallback 동작 중
 
 ---
 
-## 4. 외부 검토 (법무 어드바이저)
+## 법무 어드바이저 검토 (Phase 1 전)
 
 - [ ] **위험 분류 키워드 / 기준 검토**
   - 파일: [services/risk-classifier/app/classifiers/rule_engine.py](services/risk-classifier/app/classifiers/rule_engine.py)
   - `LEGAL_THREAT_KEYWORDS`, `HATE_SPEECH_KEYWORDS` 등 법령 기준으로 검토 필요
-
 - [ ] **Chain of Custody 형식 검증**
   - 파일: [services/evidence-service/src/pdf/generator.ts](services/evidence-service/src/pdf/generator.ts)
   - 실제 법정 제출 가능한 형식인지 법무 어드바이저 서명 필요
-
-- [ ] **면책 조항 문구 검토**
-  - PDF 하단 disclaimer 문구 최종 확인
-
+- [ ] **면책 조항 문구 검토** — PDF 하단 disclaimer 문구 최종 확인
 - [ ] **PIPA 준수 법률 검토** — `AccountPattern`의 `authorPlatformId` 저장이 개인정보 처리에 해당하는지 확인
 
 ---
 
-## 5. GA 출시 전 (Phase 1 이후)
+## GA 출시 전 (Phase 1 이후)
 
 - [ ] **Phase 3**: AWS S3 버킷 생성 + Object Lock Compliance Mode 활성화 (30일 최소 보존) — R2는 Object Lock 미지원
 - [ ] **Phase 3**: AWS KMS 키 생성 (AES-256) — Phase 1은 R2 서버사이드 암호화로 충분

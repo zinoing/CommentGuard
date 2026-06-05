@@ -59,13 +59,11 @@ def classify_with_rules(text: str) -> dict:
             brand_score = max(brand_score, 0.5)
             break
 
-    recommended_action = ActionType.IGNORE
-    if legal_score >= 0.8 or urgency_score >= 0.9:
-        recommended_action = ActionType.PRESERVE_AND_DELETE
-    elif legal_score >= 0.5:
-        recommended_action = ActionType.HIDE
-    elif brand_score >= 0.5:
-        recommended_action = ActionType.HIDE
+    # Urgency score is for queue priority only — never used for action determination (§11)
+    # recommended_action is None when legal review is not warranted
+    recommended_action = (
+        ActionType.REQUEST_LEGAL_REVIEW if legal_score >= 0.7 else None
+    )
 
     return {
         "risk_types": list(set(risk_types)),

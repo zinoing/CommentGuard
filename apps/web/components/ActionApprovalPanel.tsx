@@ -7,11 +7,10 @@ interface ActionApprovalPanelProps {
   onApprove: (approvedById: string, actionType: string) => Promise<void>;
 }
 
+// CHECKLIST §3: CommentGuard only supports REQUEST_LEGAL_REVIEW.
+// Operators perform platform hide/delete/block directly on the platform.
 const ACTIONS = [
-  { value: "IGNORE", label: "Ignore" },
-  { value: "HIDE", label: "Hide from public" },
-  { value: "DELETE", label: "Delete" },
-  { value: "PRESERVE_AND_DELETE", label: "Preserve as evidence & Delete" },
+  { value: "REQUEST_LEGAL_REVIEW", label: "Request Legal Review (activates Legal Hold)" },
 ];
 
 export function ActionApprovalPanel({ commentId, userId, onApprove }: ActionApprovalPanelProps) {

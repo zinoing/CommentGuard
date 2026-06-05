@@ -1,8 +1,7 @@
 from fastapi import APIRouter
 from app.models import ClassifyRequest, ClassifyResponse, ActionType
 from app.classifiers.rule_engine import classify_with_rules
-from app.classifiers.ml_classifier import classify_with_ml, MODEL_VERSION
-import os
+from app.classifiers.ml_classifier import classify_with_ml, GPT_MODEL_VERSION
 
 router = APIRouter()
 
@@ -20,7 +19,7 @@ async def classify_comment(req: ClassifyRequest) -> ClassifyResponse:
             urgency_score=rule_result["urgency_score"],
             risk_types=rule_result["risk_types"],
             recommended_action=rule_result["recommended_action"],
-            model_version=f"rule-engine-v1+{MODEL_VERSION}",
+            model_version=f"rule-engine-v1+{GPT_MODEL_VERSION}",
             classification="reference_only",
         )
 
@@ -32,11 +31,9 @@ async def classify_comment(req: ClassifyRequest) -> ClassifyResponse:
     final_urgency = max(rule_result["urgency_score"], ml_result["urgency_score"])
     final_risk_types = list(set(rule_result["risk_types"] + ml_result["risk_types"]))
 
-    final_action = ActionType.IGNORE
-    if final_legal >= 0.8 or final_urgency >= 0.9:
-        final_action = ActionType.PRESERVE_AND_DELETE
-    elif final_legal >= 0.5:
-        final_action = ActionType.HIDE
+    # Urgency score is for queue priority only — never used for action determination (§11)
+    # recommended_action is None unless legal_score crosses the review threshold
+    final_action = ActionType.REQUEST_LEGAL_REVIEW if final_legal >= 0.7 else None
 
     return ClassifyResponse(
         comment_id=req.comment_id,

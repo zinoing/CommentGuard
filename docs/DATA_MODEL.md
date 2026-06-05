@@ -104,7 +104,7 @@ Classification result. One comment may have multiple assessments (e.g., re-runs 
 | `legalScore` | Float | 0.0–1.0 |
 | `brandScore` | Float | 0.0–1.0 |
 | `urgencyScore` | Float | 0.0–1.0 |
-| `recommendedAction` | ActionType | IGNORE / HIDE / DELETE / PRESERVE_AND_DELETE |
+| `recommendedAction` | ActionType? | `REQUEST_LEGAL_REVIEW` or `null` (null = no review needed) |
 | `modelVersion` | String | e.g. `gpt-4o-2024-05-13`, `rule-engine-v1` |
 | `classification` | String | Always `"reference_only"` — never omit |
 | `isProvisional` | Boolean | True when API schema fallback mode is active |
@@ -239,7 +239,7 @@ Aggregate cross-channel pattern. **Must not contain any field that identifies a 
 |---|---|
 | `Platform` | YOUTUBE, INSTAGRAM |
 | `CaseStatus` | OPEN, UNDER_REVIEW, PACKAGED, REFERRED, CLOSED |
-| `ActionType` | IGNORE, HIDE, DELETE, PRESERVE_AND_DELETE |
+| `ActionType` | `REQUEST_LEGAL_REVIEW` (single value — OPEN_ON_PLATFORM is UI-only, no DB write) |
 | `ActionStatus` | PENDING, APPROVED, REJECTED, EXECUTED, FAILED |
 | `UserRole` | SUPER_ADMIN, CHANNEL_MANAGER, VIEWER, LAW_FIRM |
 | `RiskType` | LEGAL_THREAT, HATE_SPEECH, HARASSMENT, SPAM, COORDINATED_ATTACK |

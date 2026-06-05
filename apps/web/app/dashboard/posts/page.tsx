@@ -138,15 +138,12 @@ export default function PostsPage() {
                 <th>Dominant risk</th>
                 <th>Status</th>
                 <th>Last scan</th>
+                <th />
               </tr>
             </thead>
             <tbody>
               {POSTS.map((p) => (
-                <tr
-                  key={p.id}
-                  style={{ cursor: "pointer" }}
-                  onClick={() => router.push("/dashboard/comments")}
-                >
+                <tr key={p.id}>
                   <td>
                     <div className="cg-row ac g10">
                       <div className="thumb">{p.duration}</div>
@@ -174,6 +171,9 @@ export default function PostsPage() {
                     <span className={`badge ${p.status.level}`}>{p.status.label}</span>
                   </td>
                   <td className="muted cg-small">{p.lastScan}</td>
+                  <td>
+                    <button className="cg-link" onClick={() => router.push("/dashboard/comments")}>View</button>
+                  </td>
                 </tr>
               ))}
             </tbody>
@@ -192,7 +192,7 @@ export default function PostsPage() {
       </div>
 
       <div className="cg-tiny muted mt12">
-        Status is system-calculated &amp; read-only. Click a row to view its comments.
+        Status is system-calculated &amp; read-only. Click View to see a post's comments.
       </div>
     </>
   );

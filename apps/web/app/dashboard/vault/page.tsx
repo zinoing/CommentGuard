@@ -4,6 +4,8 @@ import { useState } from "react";
 const VAULT_ENTRIES = [
   {
     id: "EV-9821-X",
+    caseId: "CASE-204",
+    channel: "Global News Network",
     commentId: "UCz…89aB",
     hash: "e3b0c44298…",
     acquired: "10-24 14:02",
@@ -11,6 +13,8 @@ const VAULT_ENTRIES = [
   },
   {
     id: "EV-9820-T",
+    caseId: "CASE-198",
+    channel: "Tech Horizon",
     commentId: "UCm…22kP",
     hash: "813511ea63…",
     acquired: "10-24 11:45",
@@ -18,6 +22,8 @@ const VAULT_ENTRIES = [
   },
   {
     id: "EV-9819-Q",
+    caseId: "CASE-192",
+    channel: "Finance Daily",
     commentId: "UCp…77xZ",
     hash: "cf83e1357e…",
     acquired: "10-23 18:22",
@@ -32,13 +38,47 @@ const CUSTODY = [
   { title: "Integrity re-verified", meta: "Scheduled check · match ✓", date: "2023-10-25 00:00:03 UTC" },
 ];
 
+const CHANNELS = [...new Set(VAULT_ENTRIES.map((e) => e.channel))];
+const PAGE_SIZE = 3;
+
 export default function VaultPage() {
   const [view, setView] = useState<"list" | "entry">("list");
   const [checked, setChecked] = useState<Set<string>>(new Set());
-  const allChecked = checked.size === VAULT_ENTRIES.length;
+
+  const [searchQuery, setSearchQuery] = useState("");
+  const [filterStatus, setFilterStatus] = useState("");
+  const [filterChannel, setFilterChannel] = useState("");
+  const [page, setPage] = useState(1);
+
+  const filtered = VAULT_ENTRIES.filter((e) => {
+    if (searchQuery) {
+      const q = searchQuery.toLowerCase();
+      if (
+        !e.id.toLowerCase().includes(q) &&
+        !e.commentId.toLowerCase().includes(q) &&
+        !e.caseId.toLowerCase().includes(q)
+      ) return false;
+    }
+    if (filterStatus && e.status.label !== filterStatus) return false;
+    if (filterChannel && e.channel !== filterChannel) return false;
+    return true;
+  });
+
+  const totalPages = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
+  const pageRows = filtered.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
+
+  const allChecked = filtered.length > 0 && filtered.every((e) => checked.has(e.id));
 
   function toggleAll() {
-    setChecked(allChecked ? new Set() : new Set(VAULT_ENTRIES.map((e) => e.id)));
+    if (allChecked) {
+      setChecked((prev) => {
+        const next = new Set(prev);
+        filtered.forEach((e) => next.delete(e.id));
+        return next;
+      });
+    } else {
+      setChecked((prev) => new Set([...prev, ...filtered.map((e) => e.id)]));
+    }
   }
 
   function toggle(id: string) {
@@ -47,6 +87,20 @@ export default function VaultPage() {
       next.has(id) ? next.delete(id) : next.add(id);
       return next;
     });
+  }
+
+  function resetFilters() {
+    setSearchQuery("");
+    setFilterStatus("");
+    setFilterChannel("");
+    setPage(1);
+  }
+
+  function onFilterChange(setter: (v: string) => void) {
+    return (e: React.ChangeEvent<HTMLSelectElement>) => {
+      setter(e.target.value);
+      setPage(1);
+    };
   }
 
   if (view === "entry") {
@@ -200,9 +254,15 @@ export default function VaultPage() {
             <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
               <circle cx="11" cy="11" r="7" /><path d="M21 21l-4-4" />
             </svg>
-            Search by Case ID, Comment ID, or video…
+            <input
+              type="text"
+              placeholder="Search by Evidence ID, Case ID, or Comment ID…"
+              value={searchQuery}
+              onChange={(e) => { setSearchQuery(e.target.value); setPage(1); }}
+              onKeyDown={(e) => e.key === "Enter" && setPage(1)}
+            />
           </div>
-          <button className="btn primary">Search</button>
+          <button className="btn primary" onClick={() => setPage(1)}>Search</button>
         </div>
         <details className="adv">
           <summary><span className="chev">▸</span> Advanced filters</summary>
@@ -210,24 +270,24 @@ export default function VaultPage() {
             <div className="fields">
               <div className="field">
                 <span className="fl">STATUS</span>
-                <div className="cg-select">All statuses <span className="cv">▾</span></div>
+                <select className="cg-select" value={filterStatus} onChange={onFilterChange(setFilterStatus)}>
+                  <option value="">All statuses</option>
+                  <option value="Draft">Draft</option>
+                  <option value="Finalized">Finalized</option>
+                  <option value="Shared">Shared</option>
+                </select>
               </div>
               <div className="field">
                 <span className="fl">CHANNEL</span>
-                <div className="cg-select">All channels <span className="cv">▾</span></div>
-              </div>
-              <div className="field">
-                <span className="fl">SOURCE</span>
-                <div className="cg-select">Official API <span className="cv">▾</span></div>
-              </div>
-              <div className="field">
-                <span className="fl">ACQUIRED</span>
-                <div className="cg-select">Last 30 days <span className="cv">▾</span></div>
+                <select className="cg-select" value={filterChannel} onChange={onFilterChange(setFilterChannel)}>
+                  <option value="">All channels</option>
+                  {CHANNELS.map((c) => <option key={c} value={c}>{c}</option>)}
+                </select>
               </div>
             </div>
             <div className="cg-row je g10 mt16">
-              <button className="btn sm ghost">Reset</button>
-              <button className="btn sm primary">Apply filters</button>
+              <button className="btn sm ghost" onClick={resetFilters}>Reset</button>
+              <button className="btn sm primary" onClick={() => setPage(1)}>Apply filters</button>
             </div>
           </div>
         </details>
@@ -262,6 +322,7 @@ export default function VaultPage() {
             <thead>
               <tr>
                 <th className="colcheck" />
+                <th>Evidence ID</th>
                 <th>Case ID</th>
                 <th>Comment</th>
                 <th>Source</th>
@@ -272,7 +333,7 @@ export default function VaultPage() {
               </tr>
             </thead>
             <tbody>
-              {VAULT_ENTRIES.map((entry) => (
+              {pageRows.length > 0 ? pageRows.map((entry) => (
                 <tr key={entry.id}>
                   <td>
                     <span
@@ -284,7 +345,8 @@ export default function VaultPage() {
                       onKeyDown={(e) => (e.key === " " || e.key === "Enter") && toggle(entry.id)}
                     />
                   </td>
-                  <td className="cg-strong">{entry.id}</td>
+                  <td className="cg-strong cg-mono">{entry.id}</td>
+                  <td className="cg-strong">{entry.caseId}</td>
                   <td className="cg-mono">{entry.commentId}</td>
                   <td><span className="badge ok"><span className="dot" />Official API</span></td>
                   <td className="cg-mono">{entry.hash}</td>
@@ -294,18 +356,33 @@ export default function VaultPage() {
                     <button className="cg-link" onClick={() => setView("entry")}>View</button>
                   </td>
                 </tr>
-              ))}
+              )) : (
+                <tr>
+                  <td colSpan={9} style={{ textAlign: "center", padding: "32px 0", color: "var(--ink-faint)" }}>
+                    No results found
+                  </td>
+                </tr>
+              )}
             </tbody>
           </table>
         </div>
         <div className="pager">
-          <span>Showing 1–3 of 42 entries</span>
+          <span>
+            {filtered.length === 0
+              ? "No results"
+              : `Showing ${(page - 1) * PAGE_SIZE + 1}–${Math.min(page * PAGE_SIZE, filtered.length)} of ${filtered.length} entr${filtered.length !== 1 ? "ies" : "y"}`}
+          </span>
           <div className="pages">
-            <span className="pg active">1</span>
-            <span className="pg">2</span>
-            <span className="pg">3</span>
-            <span className="pg ghost">…</span>
-            <span className="pg">14</span>
+            {Array.from({ length: totalPages }, (_, i) => i + 1).map((p) => (
+              <span
+                key={p}
+                className={`pg${page === p ? " active" : ""}`}
+                onClick={() => setPage(p)}
+                style={{ cursor: "pointer" }}
+              >
+                {p}
+              </span>
+            ))}
           </div>
         </div>
       </div>

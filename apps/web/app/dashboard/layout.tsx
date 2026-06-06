@@ -43,6 +43,17 @@ const NAV = [
           </svg>
         ),
       },
+      {
+        href: "/dashboard/collect",
+        key: "collect",
+        label: "Collect",
+        icon: (
+          <svg className="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+            <path d="M12 3v13M7 11l5 5 5-5" />
+            <path d="M5 20h14" />
+          </svg>
+        ),
+      },
     ],
   },
   {
@@ -89,6 +100,7 @@ function getBreadcrumbs(pathname: string): React.ReactNode {
   }
   if (pathname.startsWith("/dashboard/vault")) return <span className="here">Evidence Vault</span>;
   if (pathname === "/dashboard/cases") return <span className="here">Cases</span>;
+  if (pathname.startsWith("/dashboard/collect")) return <span className="here">Collect</span>;
   return <span className="here">Dashboard</span>;
 }
 
@@ -98,6 +110,7 @@ function getActiveKey(pathname: string): string {
   if (pathname.startsWith("/dashboard/queue")) return "queue";
   if (pathname.startsWith("/dashboard/vault")) return "vault";
   if (pathname.startsWith("/dashboard/cases")) return "cases";
+  if (pathname.startsWith("/dashboard/collect")) return "collect";
   return "dashboard";
 }
 

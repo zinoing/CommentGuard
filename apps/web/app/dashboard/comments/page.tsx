@@ -1,6 +1,12 @@
 "use client";
 import { useState } from "react";
 import CommentDetailSlideOver from "@/components/CommentDetailSlideOver";
+import {
+  FILTER_TYPES,
+  RiskTypeFilter,
+  RiskTypeBadges,
+  riskTypeMatchesFilter,
+} from "@/components/RiskTypeFilter";
 
 const COMMENTS = [
   {
@@ -13,6 +19,7 @@ const COMMENTS = [
     urgency: { level: "crit", label: "Critical" },
     status: { cls: "new", label: "New" },
     updated: "2m ago",
+    riskTypes: ["Defamation – False Facts", "Threat"],
   },
   {
     id: "cmt_002",
@@ -24,6 +31,7 @@ const COMMENTS = [
     urgency: { level: "high", label: "Elevated" },
     status: { cls: "reviewed", label: "Reviewed" },
     updated: "14m ago",
+    riskTypes: ["Defamation – True Facts", "Advertiser Risk"],
   },
   {
     id: "cmt_003",
@@ -35,6 +43,7 @@ const COMMENTS = [
     urgency: { level: "med", label: "Standard" },
     status: { cls: "linked", label: "Case-linked" },
     updated: "1h ago",
+    riskTypes: ["Advertiser Risk"],
   },
 ];
 
@@ -58,17 +67,49 @@ function sortRows(rows: typeof COMMENTS, key: SortKey) {
   });
 }
 
+const PAGE_SIZE = 3;
+
 export default function CommentListPage() {
   const [slideOverOpen, setSlideOverOpen] = useState(false);
   const [checked, setChecked] = useState<Set<string>>(new Set());
   const [sortKey, setSortKey] = useState<SortKey>("legal");
   const [sortOpen, setSortOpen] = useState(false);
 
-  const sorted = sortRows(COMMENTS, sortKey);
-  const allChecked = checked.size === COMMENTS.length;
+  const [searchQuery, setSearchQuery] = useState("");
+  const [filterUrgency, setFilterUrgency] = useState("");
+  const [filterLegalRisk, setFilterLegalRisk] = useState("");
+  const [filterStatus, setFilterStatus] = useState("");
+  const [selectedRiskTypes, setSelectedRiskTypes] = useState<Set<string>>(new Set(FILTER_TYPES));
+  const [page, setPage] = useState(1);
+
+  const filtered = COMMENTS.filter((c) => {
+    if (searchQuery) {
+      const q = searchQuery.toLowerCase();
+      if (!c.text.toLowerCase().includes(q) && !c.author.toLowerCase().includes(q)) return false;
+    }
+    if (filterUrgency && c.urgency.level !== filterUrgency) return false;
+    if (filterLegalRisk && c.legalRisk < parseInt(filterLegalRisk)) return false;
+    if (filterStatus && c.status.cls !== filterStatus) return false;
+    if (!riskTypeMatchesFilter(c.riskTypes, selectedRiskTypes)) return false;
+    return true;
+  });
+
+  const sorted = sortRows(filtered, sortKey);
+  const totalPages = Math.max(1, Math.ceil(sorted.length / PAGE_SIZE));
+  const pageRows = sorted.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
+
+  const allChecked = filtered.length > 0 && filtered.every((r) => checked.has(r.id));
 
   function toggleAll() {
-    setChecked(allChecked ? new Set() : new Set(COMMENTS.map((r) => r.id)));
+    if (allChecked) {
+      setChecked((prev) => {
+        const next = new Set(prev);
+        filtered.forEach((r) => next.delete(r.id));
+        return next;
+      });
+    } else {
+      setChecked((prev) => new Set([...prev, ...filtered.map((r) => r.id)]));
+    }
   }
 
   function toggle(id: string) {
@@ -77,6 +118,22 @@ export default function CommentListPage() {
       next.has(id) ? next.delete(id) : next.add(id);
       return next;
     });
+  }
+
+  function resetFilters() {
+    setSearchQuery("");
+    setFilterUrgency("");
+    setFilterLegalRisk("");
+    setFilterStatus("");
+    setSelectedRiskTypes(new Set(FILTER_TYPES));
+    setPage(1);
+  }
+
+  function onFilterChange(setter: (v: string) => void) {
+    return (e: React.ChangeEvent<HTMLSelectElement>) => {
+      setter(e.target.value);
+      setPage(1);
+    };
   }
 
   const currentSort = SORT_OPTIONS.find((o) => o.key === sortKey)!;
@@ -129,30 +186,55 @@ export default function CommentListPage() {
             <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
               <circle cx="11" cy="11" r="7" /><path d="M21 21l-4-4" />
             </svg>
-            Search within comments…
+            <input
+              type="text"
+              placeholder="Search within comments…"
+              value={searchQuery}
+              onChange={(e) => { setSearchQuery(e.target.value); setPage(1); }}
+              onKeyDown={(e) => e.key === "Enter" && setPage(1)}
+            />
           </div>
-          <button className="btn primary">Search</button>
+          <button className="btn primary" onClick={() => setPage(1)}>Search</button>
         </div>
         <details className="adv">
           <summary><span className="chev">▸</span> Advanced filters</summary>
           <div className="adv-body">
             <div className="fields">
               <div className="field">
-                <span className="fl">RISK LEVEL</span>
-                <div className="cg-select">All levels <span className="cv">▾</span></div>
+                <span className="fl">URGENCY</span>
+                <select className="cg-select" value={filterUrgency} onChange={onFilterChange(setFilterUrgency)}>
+                  <option value="">All levels</option>
+                  <option value="crit">Critical</option>
+                  <option value="high">Elevated</option>
+                  <option value="med">Standard</option>
+                </select>
               </div>
               <div className="field">
-                <span className="fl">RISK TYPE</span>
-                <div className="cg-select">All types <span className="cv">▾</span></div>
+                <span className="fl">LEGAL RISK</span>
+                <select className="cg-select" value={filterLegalRisk} onChange={onFilterChange(setFilterLegalRisk)}>
+                  <option value="">Any score</option>
+                  <option value="50">≥ 50</option>
+                  <option value="70">≥ 70</option>
+                  <option value="90">≥ 90</option>
+                </select>
               </div>
               <div className="field">
                 <span className="fl">STATUS</span>
-                <div className="cg-select">New <span className="cv">▾</span></div>
+                <select className="cg-select" value={filterStatus} onChange={onFilterChange(setFilterStatus)}>
+                  <option value="">All statuses</option>
+                  <option value="new">New</option>
+                  <option value="reviewed">Reviewed</option>
+                  <option value="linked">Case-linked</option>
+                </select>
               </div>
+              <RiskTypeFilter
+                selected={selectedRiskTypes}
+                onChange={(s) => { setSelectedRiskTypes(s); setPage(1); }}
+              />
             </div>
             <div className="cg-row je g10 mt16">
-              <button className="btn sm ghost">Reset</button>
-              <button className="btn sm primary">Apply filters</button>
+              <button className="btn sm ghost" onClick={resetFilters}>Reset</button>
+              <button className="btn sm primary" onClick={() => setPage(1)}>Apply filters</button>
             </div>
           </div>
         </details>
@@ -189,7 +271,7 @@ export default function CommentListPage() {
                   <div
                     key={o.key}
                     className={`sort-opt${sortKey === o.key ? " active" : ""}`}
-                    onClick={() => { setSortKey(o.key); setSortOpen(false); }}
+                    onClick={() => { setSortKey(o.key); setSortOpen(false); setPage(1); }}
                   >
                     {o.desc}
                     <span className="tick">✓</span>
@@ -210,20 +292,21 @@ export default function CommentListPage() {
       {/* Table */}
       <div className="card pad0">
         <div className="tbl-wrap">
-          <table className="tbl" style={{ minWidth: 820 }}>
+          <table className="tbl" style={{ minWidth: 960 }}>
             <thead>
               <tr>
                 <th className="colcheck" />
                 <th>Comment</th>
                 <th>Risk scores</th>
                 <th>Urgency</th>
+                <th>Risk type</th>
                 <th>Status</th>
                 <th>Updated</th>
                 <th />
               </tr>
             </thead>
             <tbody>
-              {sorted.map((row) => (
+              {pageRows.length > 0 ? pageRows.map((row) => (
                 <tr key={row.id}>
                   <td>
                     <span
@@ -257,6 +340,9 @@ export default function CommentListPage() {
                     <span className={`badge ${row.urgency.level}`}><span className="dot" />{row.urgency.label}</span>
                   </td>
                   <td>
+                    <RiskTypeBadges types={row.riskTypes} />
+                  </td>
+                  <td>
                     <span className={`cg-status ${row.status.cls}`}>
                       <span className="d" />
                       {row.status.label}
@@ -267,18 +353,33 @@ export default function CommentListPage() {
                     <button className="cg-link" onClick={() => setSlideOverOpen(true)}>View</button>
                   </td>
                 </tr>
-              ))}
+              )) : (
+                <tr>
+                  <td colSpan={8} style={{ textAlign: "center", padding: "32px 0", color: "var(--ink-faint)" }}>
+                    No results found
+                  </td>
+                </tr>
+              )}
             </tbody>
           </table>
         </div>
         <div className="pager">
-          <span>Showing 1–3 of 38 flagged</span>
+          <span>
+            {sorted.length === 0
+              ? "No results"
+              : `Showing ${(page - 1) * PAGE_SIZE + 1}–${Math.min(page * PAGE_SIZE, sorted.length)} of ${sorted.length} flagged`}
+          </span>
           <div className="pages">
-            <span className="pg active">1</span>
-            <span className="pg">2</span>
-            <span className="pg">3</span>
-            <span className="pg ghost">…</span>
-            <span className="pg">13</span>
+            {Array.from({ length: totalPages }, (_, i) => i + 1).map((p) => (
+              <span
+                key={p}
+                className={`pg${page === p ? " active" : ""}`}
+                onClick={() => setPage(p)}
+                style={{ cursor: "pointer" }}
+              >
+                {p}
+              </span>
+            ))}
           </div>
         </div>
       </div>

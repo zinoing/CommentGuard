@@ -49,6 +49,13 @@ enum RiskType {
   COORDINATED_ATTACK
 }
 
+enum CollectJobStatus {
+  PENDING
+  RUNNING
+  DONE
+  FAILED
+}
+
 model Tenant {
   id         String    @id @default(cuid())
   name       String
@@ -97,8 +104,8 @@ model Comment {
   platformCommentId   String
   text                String
   authorPlatformId    String
-  snapshotR2Key       String
-  snapshotHash        String          // SHA-256 of raw comment snapshot
+  snapshotR2Key       String?         // null until Phase 3 snapshot capture
+  snapshotHash        String?         // null until Phase 3 snapshot capture
   snapshotHashAlg     String          @default("sha256")
   createdAt           DateTime        @default(now())
   riskAssessments     RiskAssessment[]
@@ -213,6 +220,18 @@ model AccountPattern {
   flaggedAt        DateTime?
   createdAt        DateTime  @default(now())
   updatedAt        DateTime  @updatedAt
+}
+
+model CollectJob {
+  id              String           @id @default(cuid())
+  channelId       String
+  status          CollectJobStatus @default(PENDING)
+  totalVideos     Int              @default(0)
+  processedVideos Int              @default(0)
+  totalComments   Int              @default(0)
+  errorMessage    String?
+  createdAt       DateTime         @default(now())
+  updatedAt       DateTime         @updatedAt
 }
 
 // k-anonymity: NO channel_id, author_id, mcn_id, or any PII

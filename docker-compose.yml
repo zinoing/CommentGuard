@@ -28,6 +28,10 @@ services:
       - "8001:8001"
     environment:
       OPENAI_API_KEY: ${OPENAI_API_KEY}
+      DATABASE_URL: postgresql://commentguard:commentguard_dev@postgres:5432/commentguard
+    depends_on:
+      postgres:
+        condition: service_healthy
 
   collector-service:
     build:

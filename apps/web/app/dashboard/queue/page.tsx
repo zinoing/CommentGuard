@@ -1,6 +1,12 @@
 "use client";
 import { useState } from "react";
 import CommentDetailSlideOver from "@/components/CommentDetailSlideOver";
+import {
+  FILTER_TYPES,
+  RiskTypeFilter,
+  RiskTypeBadges,
+  riskTypeMatchesFilter,
+} from "@/components/RiskTypeFilter";
 
 const QUEUE = [
   {
@@ -11,7 +17,7 @@ const QUEUE = [
     legalRisk: 98,
     brandImpact: 55,
     urgency: { level: "crit", label: "Critical" },
-    riskType: "Regulatory liability",
+    riskTypes: ["Threat", "Persistent Harassment"],
     pending: "26h",
     pendingWarn: true,
   },
@@ -23,7 +29,7 @@ const QUEUE = [
     legalRisk: 82,
     brandImpact: 60,
     urgency: { level: "high", label: "High" },
-    riskType: "GDPR violation",
+    riskTypes: ["Defamation – False Facts"],
     pending: "28h",
     pendingWarn: true,
   },
@@ -35,7 +41,7 @@ const QUEUE = [
     legalRisk: 74,
     brandImpact: 38,
     urgency: { level: "high", label: "High" },
-    riskType: "Security leak",
+    riskTypes: ["Organized Attack"],
     pending: "4h",
     pendingWarn: false,
   },
@@ -47,7 +53,7 @@ const QUEUE = [
     legalRisk: 45,
     brandImpact: 30,
     urgency: { level: "med", label: "Medium" },
-    riskType: "Misinformation",
+    riskTypes: ["Defamation – True Facts", "Advertiser Risk"],
     pending: "32h",
     pendingWarn: true,
   },
@@ -59,11 +65,13 @@ const QUEUE = [
     legalRisk: 12,
     brandImpact: 18,
     urgency: { level: "low", label: "Low" },
-    riskType: "Spam",
+    riskTypes: ["Advertiser Risk"],
     pending: "10m",
     pendingWarn: false,
   },
 ];
+
+const CHANNELS = [...new Set(QUEUE.map((r) => r.channel))];
 
 type SortKey = "urgency" | "legal" | "bsafe" | "pending";
 
@@ -85,17 +93,55 @@ function sortRows(rows: typeof QUEUE, key: SortKey) {
   });
 }
 
+const PAGE_SIZE = 5;
+
 export default function RiskQueuePage() {
   const [slideOverOpen, setSlideOverOpen] = useState(false);
   const [checked, setChecked] = useState<Set<string>>(new Set());
   const [sortKey, setSortKey] = useState<SortKey>("urgency");
   const [sortOpen, setSortOpen] = useState(false);
 
-  const sorted = sortRows(QUEUE, sortKey);
-  const allChecked = checked.size === QUEUE.length;
+  const [searchQuery, setSearchQuery] = useState("");
+  const [filterUrgency, setFilterUrgency] = useState("");
+  const [filterChannel, setFilterChannel] = useState("");
+  const [filterLegalScore, setFilterLegalScore] = useState("");
+  const [filterPending, setFilterPending] = useState("");
+  const [selectedRiskTypes, setSelectedRiskTypes] = useState<Set<string>>(new Set(FILTER_TYPES));
+  const [page, setPage] = useState(1);
+
+  const filtered = QUEUE.filter((r) => {
+    if (searchQuery) {
+      const q = searchQuery.toLowerCase();
+      if (
+        !r.excerpt.toLowerCase().includes(q) &&
+        !r.channel.toLowerCase().includes(q) &&
+        !r.thread.toLowerCase().includes(q)
+      ) return false;
+    }
+    if (filterUrgency && r.urgency.level !== filterUrgency) return false;
+    if (filterChannel && r.channel !== filterChannel) return false;
+    if (filterLegalScore && r.legalRisk < parseInt(filterLegalScore)) return false;
+    if (filterPending === "24h" && !r.pendingWarn) return false;
+    if (!riskTypeMatchesFilter(r.riskTypes, selectedRiskTypes)) return false;
+    return true;
+  });
+
+  const sorted = sortRows(filtered, sortKey);
+  const totalPages = Math.max(1, Math.ceil(sorted.length / PAGE_SIZE));
+  const pageRows = sorted.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
+
+  const allChecked = filtered.length > 0 && filtered.every((r) => checked.has(r.id));
 
   function toggleAll() {
-    setChecked(allChecked ? new Set() : new Set(QUEUE.map((r) => r.id)));
+    if (allChecked) {
+      setChecked((prev) => {
+        const next = new Set(prev);
+        filtered.forEach((r) => next.delete(r.id));
+        return next;
+      });
+    } else {
+      setChecked((prev) => new Set([...prev, ...filtered.map((r) => r.id)]));
+    }
   }
 
   function toggle(id: string) {
@@ -104,6 +150,23 @@ export default function RiskQueuePage() {
       next.has(id) ? next.delete(id) : next.add(id);
       return next;
     });
+  }
+
+  function resetFilters() {
+    setSearchQuery("");
+    setFilterUrgency("");
+    setFilterChannel("");
+    setFilterLegalScore("");
+    setFilterPending("");
+    setSelectedRiskTypes(new Set(FILTER_TYPES));
+    setPage(1);
+  }
+
+  function onFilterChange(setter: (v: string) => void) {
+    return (e: React.ChangeEvent<HTMLSelectElement>) => {
+      setter(e.target.value);
+      setPage(1);
+    };
   }
 
   const currentSort = SORT_OPTIONS.find((o) => o.key === sortKey)!;
@@ -124,7 +187,7 @@ export default function RiskQueuePage() {
           <div className="sub">Newly flagged, case-unlinked comments · sorted by urgency</div>
         </div>
         <div className="actions">
-          <span className="badge outline">1,402 entries</span>
+          <span className="badge outline">{filtered.length} entries</span>
         </div>
       </div>
 
@@ -135,50 +198,61 @@ export default function RiskQueuePage() {
             <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
               <circle cx="11" cy="11" r="7" /><path d="M21 21l-4-4" />
             </svg>
-            Search risk queue by comment, user, or thread…
+            <input
+              type="text"
+              placeholder="Search risk queue by comment, user, or thread…"
+              value={searchQuery}
+              onChange={(e) => { setSearchQuery(e.target.value); setPage(1); }}
+              onKeyDown={(e) => e.key === "Enter" && setPage(1)}
+            />
           </div>
-          <button className="btn primary">Search</button>
+          <button className="btn primary" onClick={() => setPage(1)}>Search</button>
         </div>
         <details className="adv">
           <summary><span className="chev">▸</span> Advanced filters</summary>
           <div className="adv-body">
             <div className="fields">
               <div className="field">
-                <span className="fl">RISK LEVEL</span>
-                <div className="cg-select">All levels <span className="cv">▾</span></div>
+                <span className="fl">URGENCY</span>
+                <select className="cg-select" value={filterUrgency} onChange={onFilterChange(setFilterUrgency)}>
+                  <option value="">All levels</option>
+                  <option value="crit">Critical</option>
+                  <option value="high">High</option>
+                  <option value="med">Medium</option>
+                  <option value="low">Low</option>
+                </select>
               </div>
               <div className="field">
                 <span className="fl">CHANNEL</span>
-                <div className="cg-select">All channels <span className="cv">▾</span></div>
-              </div>
-              <div className="field">
-                <span className="fl">STATUS</span>
-                <div className="cg-select">All statuses <span className="cv">▾</span></div>
+                <select className="cg-select" value={filterChannel} onChange={onFilterChange(setFilterChannel)}>
+                  <option value="">All channels</option>
+                  {CHANNELS.map((c) => <option key={c} value={c}>{c}</option>)}
+                </select>
               </div>
               <div className="field">
                 <span className="fl">LEGAL SCORE</span>
-                <div className="cg-select">≥ 70 <span className="cv">▾</span></div>
+                <select className="cg-select" value={filterLegalScore} onChange={onFilterChange(setFilterLegalScore)}>
+                  <option value="">Any score</option>
+                  <option value="70">≥ 70</option>
+                  <option value="80">≥ 80</option>
+                  <option value="90">≥ 90</option>
+                </select>
               </div>
               <div className="field">
                 <span className="fl">PENDING SINCE</span>
-                <div className="cg-select">&gt; 24h <span className="cv">▾</span></div>
+                <select className="cg-select" value={filterPending} onChange={onFilterChange(setFilterPending)}>
+                  <option value="">Any duration</option>
+                  <option value="24h">&gt; 24h</option>
+                </select>
               </div>
-            </div>
-            <div className="mt16">
-              <span className="fl" style={{ color: "var(--ink-3)" }}>RISK TYPE · DETECT</span>
-              <div className="chips-row mt8">
-                <span className="fchip on">✓ Regulatory liability</span>
-                <span className="fchip on">✓ GDPR violation</span>
-                <span className="fchip">Security leak</span>
-                <span className="fchip">Misinformation</span>
-                <span className="fchip">Defamation</span>
-                <span className="fchip">Harassment</span>
-                <span className="fchip">Spam</span>
-              </div>
+              <RiskTypeFilter
+                selected={selectedRiskTypes}
+                onChange={(s) => { setSelectedRiskTypes(s); setPage(1); }}
+              />
             </div>
             <div className="cg-row je g10 mt16">
-              <button className="btn sm ghost">Reset</button>
-              <button className="btn sm primary">Apply filters</button>
+              <button className="btn sm ghost" onClick={resetFilters}>Reset</button>
+              <button className="btn sm primary" onClick={() => setPage(1)}>Apply filters</button>
             </div>
           </div>
         </details>
@@ -217,7 +291,7 @@ export default function RiskQueuePage() {
                   <div
                     key={o.key}
                     className={`sort-opt${sortKey === o.key ? " active" : ""}`}
-                    onClick={() => { setSortKey(o.key); setSortOpen(false); }}
+                    onClick={() => { setSortKey(o.key); setSortOpen(false); setPage(1); }}
                   >
                     {o.desc}
                     <span className="tick">✓</span>
@@ -238,7 +312,7 @@ export default function RiskQueuePage() {
       {/* Table */}
       <div className="card pad0">
         <div className="tbl-wrap">
-          <table className="tbl" style={{ minWidth: 920 }}>
+          <table className="tbl" style={{ minWidth: 1020 }}>
             <thead>
               <tr>
                 <th className="colcheck" />
@@ -252,7 +326,7 @@ export default function RiskQueuePage() {
               </tr>
             </thead>
             <tbody>
-              {sorted.map((row) => (
+              {pageRows.length > 0 ? pageRows.map((row) => (
                 <tr key={row.id}>
                   <td>
                     <span
@@ -284,7 +358,9 @@ export default function RiskQueuePage() {
                   <td>
                     <span className={`badge ${row.urgency.level}`}><span className="dot" />{row.urgency.label}</span>
                   </td>
-                  <td className="cg-small">{row.riskType}</td>
+                  <td>
+                    <RiskTypeBadges types={row.riskTypes} />
+                  </td>
                   <td>
                     {row.pendingWarn ? (
                       <span className="badge outline">⏱ {row.pending}</span>
@@ -296,18 +372,33 @@ export default function RiskQueuePage() {
                     <button className="cg-link" onClick={() => setSlideOverOpen(true)}>View</button>
                   </td>
                 </tr>
-              ))}
+              )) : (
+                <tr>
+                  <td colSpan={8} style={{ textAlign: "center", padding: "32px 0", color: "var(--ink-faint)" }}>
+                    No results found
+                  </td>
+                </tr>
+              )}
             </tbody>
           </table>
         </div>
         <div className="pager">
-          <span>Showing 1–5 of 1,402</span>
+          <span>
+            {sorted.length === 0
+              ? "No results"
+              : `Showing ${(page - 1) * PAGE_SIZE + 1}–${Math.min(page * PAGE_SIZE, sorted.length)} of ${sorted.length}`}
+          </span>
           <div className="pages">
-            <span className="pg active">1</span>
-            <span className="pg">2</span>
-            <span className="pg">3</span>
-            <span className="pg ghost">…</span>
-            <span className="pg">281</span>
+            {Array.from({ length: totalPages }, (_, i) => i + 1).map((p) => (
+              <span
+                key={p}
+                className={`pg${page === p ? " active" : ""}`}
+                onClick={() => setPage(p)}
+                style={{ cursor: "pointer" }}
+              >
+                {p}
+              </span>
+            ))}
           </div>
         </div>
       </div>

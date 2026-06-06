@@ -121,6 +121,53 @@ def _collect_comments_for_video(video_id: str) -> list[_DevComment]:
     return comments
 
 
+class _ChannelInfoRequest(BaseModel):
+    channel_url: str
+
+
+class _ChannelInfoResponse(BaseModel):
+    platform_channel_id: str
+    channel_name: str
+
+
+def _get_channel_info(channel_url: str) -> tuple[str, str]:
+    """Return (platform_channel_id, channel_name) via yt-dlp."""
+    r = subprocess.run(
+        [
+            "yt-dlp",
+            "--flat-playlist",
+            "--playlist-end", "1",
+            "--print", "%(channel_id)s\t%(channel)s",
+            "--no-warnings",
+            channel_url,
+        ],
+        capture_output=True,
+        text=True,
+        timeout=60,
+    )
+    if r.returncode != 0:
+        raise RuntimeError(r.stderr.strip() or "yt-dlp failed to extract channel info")
+    line = r.stdout.strip().splitlines()[0] if r.stdout.strip() else ""
+    parts = line.split("\t", 1)
+    if len(parts) != 2 or not parts[0]:
+        raise RuntimeError(f"Unexpected yt-dlp output: {line!r}")
+    return parts[0].strip(), parts[1].strip()
+
+
+@router.post("/dev/channel-info", response_model=_ChannelInfoResponse)
+async def dev_channel_info(req: _ChannelInfoRequest) -> _ChannelInfoResponse:
+    try:
+        platform_channel_id, channel_name = await asyncio.to_thread(
+            _get_channel_info, req.channel_url
+        )
+    except RuntimeError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    return _ChannelInfoResponse(
+        platform_channel_id=platform_channel_id,
+        channel_name=channel_name,
+    )
+
+
 @router.post("/dev/collect", response_model=_DevCollectResponse)
 async def dev_collect(req: _DevCollectRequest) -> _DevCollectResponse:
     if not await asyncio.to_thread(_check_ytdlp):

@@ -1,7 +1,12 @@
 "use client";
 import Link from "next/link";
-import { usePathname } from "next/navigation";
-import { useSession, signIn } from "next-auth/react";
+import { usePathname, useRouter } from "next/navigation";
+import { useState, useEffect } from "react";
+
+// DEV ONLY — mock session, replace with real auth (NextAuth) before GA
+const mockSession = {
+  user: { email: "zinolubjosee@gmail.com", name: "Dev User" },
+};
 
 const NAV = [
   {
@@ -114,43 +119,33 @@ function getActiveKey(pathname: string): string {
   return "dashboard";
 }
 
+function getCookie(name: string): string {
+  if (typeof document === "undefined") return "";
+  const match = document.cookie.match(new RegExp(`(?:^|; )${name}=([^;]*)`));
+  return match ? decodeURIComponent(match[1]) : "";
+}
+
 export default function DashboardLayout({ children }: { children: React.ReactNode }) {
-  const { data: session, status } = useSession();
   const pathname = usePathname();
+  const router = useRouter();
+  const [channelName, setChannelName] = useState<string>("");
 
-  if (status === "loading") {
-    return (
-      <div style={{ minHeight: "100vh", display: "flex", alignItems: "center", justifyContent: "center", color: "var(--ink-3)", fontSize: 13 }}>
-        Loading…
-      </div>
-    );
-  }
+  useEffect(() => {
+    setChannelName(getCookie("cg_channel_name"));
+  }, [pathname]);
 
-  if (!session) {
-    return (
-      <div style={{ minHeight: "100vh", background: "var(--bg)", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 20 }}>
-        <div style={{ textAlign: "center" }}>
-          <div style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 10, marginBottom: 8 }}>
-            <div className="brand" style={{ padding: 0 }}>
-              <div className="shield" />
-            </div>
-            <span style={{ fontSize: 20, fontWeight: 700, color: "var(--ink)" }}>CommentGuard</span>
-          </div>
-          <p style={{ color: "var(--ink-3)", fontSize: 14, marginBottom: 24 }}>Sign in to access the dashboard</p>
-          <button className="btn primary" onClick={() => signIn("google")}>
-            Sign in with Google
-          </button>
-        </div>
-      </div>
-    );
-  }
-
+  const session = mockSession;
   const activeKey = getActiveKey(pathname);
-  const initials = session.user?.name
+  const initials = session.user.name
     ? session.user.name.split(" ").map((n) => n[0]).join("").slice(0, 2).toUpperCase()
     : "U";
-  const displayName = session.user?.name ?? session.user?.email ?? "User";
-  const role = "Operations";
+  const displayName = session.user.name ?? session.user.email;
+
+  function handleChangeChannel() {
+    document.cookie = "cg_channel_id=; path=/; max-age=0";
+    document.cookie = "cg_channel_name=; path=/; max-age=0";
+    router.push("/dashboard/channels");
+  }
 
   return (
     <div className="cg-app">
@@ -162,6 +157,37 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
             <div className="s">Risk Management</div>
           </div>
         </div>
+
+        {/* Current channel display */}
+        {channelName && (
+          <div style={{
+            padding: "10px 16px",
+            borderBottom: "1px solid var(--border)",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "space-between",
+            gap: 8,
+          }}>
+            <div style={{ minWidth: 0 }}>
+              <div style={{ fontSize: 10, color: "var(--ink-3)", textTransform: "uppercase", letterSpacing: "0.05em", marginBottom: 2 }}>
+                현재 채널
+              </div>
+              <div style={{ fontSize: 13, fontWeight: 600, color: "var(--ink)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                {channelName}
+              </div>
+            </div>
+            <button
+              onClick={handleChangeChannel}
+              style={{
+                fontSize: 11, color: "var(--ink-3)", background: "none", border: "none",
+                cursor: "pointer", padding: "2px 6px", borderRadius: "var(--r-sm)",
+                flexShrink: 0,
+              }}
+            >
+              변경
+            </button>
+          </div>
+        )}
 
         <nav className="cg-nav">
           {NAV.map(({ group, items }) => (
@@ -186,7 +212,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
           <div className="av">{initials}</div>
           <div className="who">
             <div className="a">{displayName}</div>
-            <div className="b">{role}</div>
+            <div className="b">Operations</div>
           </div>
         </div>
       </aside>

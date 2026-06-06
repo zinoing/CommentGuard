@@ -2,19 +2,15 @@ import asyncio
 import logging
 import os
 import subprocess
-import uuid
 from datetime import datetime, timezone
 
-import psycopg2
+import httpx
 import yt_dlp
 
 logger = logging.getLogger(__name__)
 
-_DATABASE_URL = os.getenv("DATABASE_URL")
-
-
-def _get_conn():
-    return psycopg2.connect(_DATABASE_URL)
+# DEV ONLY: limit video count when set (e.g. DEV_MAX_VIDEOS=3)
+_DEV_MAX_VIDEOS = int(os.getenv("DEV_MAX_VIDEOS", "0")) or None
 
 
 def _channel_to_url(channel_id: str) -> str:
@@ -60,144 +56,65 @@ def _collect_comments_for_video(video_id: str) -> list[dict]:
             else datetime.now(tz=timezone.utc)
         )
         comments.append({
-            "id": c.get("id") or f"{video_id}_{idx}",
+            "platform_comment_id": c.get("id") or f"{video_id}_{idx}",
             "text": c.get("text") or "",
             "author_id": c.get("author_id") or c.get("author") or "unknown",
-            "created_at": created,
+            "created_at": created.isoformat(),
         })
     return comments
 
 
-def _channel_display_name(channel_id: str) -> str:
-    if channel_id.startswith("http"):
-        last = channel_id.rstrip("/").split("/")[-1]
-        return last.lstrip("@") or channel_id
-    return channel_id.lstrip("@")
-
-
-def _get_or_create_channel(platform_channel_id: str) -> str:
-    with _get_conn() as conn:
-        with conn.cursor() as cur:
-            cur.execute(
-                'SELECT id FROM "Channel" WHERE platform = %s AND "platformChannelId" = %s',
-                ("YOUTUBE", platform_channel_id),
-            )
-            row = cur.fetchone()
-            if row:
-                return row[0]
-
-            # Get or create a default tenant
-            cur.execute('SELECT id FROM "Tenant" LIMIT 1')
-            tenant_row = cur.fetchone()
-            if tenant_row:
-                tenant_id = tenant_row[0]
-            else:
-                tenant_id = str(uuid.uuid4())
-                cur.execute(
-                    'INSERT INTO "Tenant" (id, name, "updatedAt") VALUES (%s, %s, NOW())',
-                    (tenant_id, "Default"),
-                )
-
-            # Create the channel
-            channel_id = str(uuid.uuid4())
-            cur.execute(
-                '''
-                INSERT INTO "Channel"
-                    (id, platform, "platformChannelId", name, "tenantId", "apiCredentialsRef", "updatedAt")
-                VALUES (%s, 'YOUTUBE', %s, %s, %s, 'collect', NOW())
-                ON CONFLICT (platform, "platformChannelId") DO NOTHING
-                ''',
-                (channel_id, platform_channel_id, _channel_display_name(platform_channel_id), tenant_id),
-            )
-            # Re-fetch in case another process created it first
-            cur.execute(
-                'SELECT id FROM "Channel" WHERE platform = %s AND "platformChannelId" = %s',
-                ("YOUTUBE", platform_channel_id),
-            )
-            return cur.fetchone()[0]
-
-
-def _upsert_comments(channel_internal_id: str, comments: list[dict]) -> int:
-    if not comments:
-        return 0
-    inserted = 0
-    with _get_conn() as conn:
-        with conn.cursor() as cur:
-            for c in comments:
-                cur.execute(
-                    '''
-                    INSERT INTO "Comment"
-                        (id, "channelId", "platformCommentId", text, "authorPlatformId", "createdAt")
-                    VALUES (%s, %s, %s, %s, %s, %s)
-                    ON CONFLICT ("channelId", "platformCommentId") DO NOTHING
-                    ''',
-                    (
-                        str(uuid.uuid4()),
-                        channel_internal_id,
-                        c["id"],
-                        c["text"],
-                        c["author_id"],
-                        c["created_at"],
-                    ),
-                )
-                if cur.rowcount > 0:
-                    inserted += 1
-    return inserted
-
-
-def _update_job(job_id: str, **fields) -> None:
-    if not fields:
-        return
-    parts = [f'"{k}" = %s' for k in fields]
-    parts.append('"updatedAt" = NOW()')
-    values = list(fields.values())
-    values.append(job_id)
-    sql = f'UPDATE "CollectJob" SET {", ".join(parts)} WHERE "id" = %s'
-    with _get_conn() as conn:
-        with conn.cursor() as cur:
-            cur.execute(sql, values)
-
-
-async def collect_channel(job_id: str, channel_id: str) -> None:
+async def _post_callback(client: httpx.AsyncClient, callback_url: str, payload: dict) -> None:
     try:
-        await asyncio.to_thread(_update_job, job_id, status="RUNNING")
-
-        try:
-            video_ids = await asyncio.to_thread(_get_video_ids, channel_id)
-        except Exception as e:
-            await asyncio.to_thread(_update_job, job_id, status="FAILED", errorMessage=str(e)[:500])
-            return
-
-        await asyncio.to_thread(_update_job, job_id, totalVideos=len(video_ids))
-
-        channel_internal_id = await asyncio.to_thread(_get_or_create_channel, channel_id)
-
-        processed = 0
-        total_comments = 0
-
-        for video_id in video_ids:
-            try:
-                comments = await asyncio.to_thread(_collect_comments_for_video, video_id)
-                if channel_internal_id and comments:
-                    inserted = await asyncio.to_thread(_upsert_comments, channel_internal_id, comments)
-                    total_comments += inserted
-            except Exception as e:
-                logger.warning("Failed to process video %s: %s", video_id, e)
-                # Single video failure does not abort the job (CHECKLIST)
-            finally:
-                processed += 1
-                await asyncio.to_thread(
-                    _update_job,
-                    job_id,
-                    processedVideos=processed,
-                    totalComments=total_comments,
-                )
-
-        await asyncio.to_thread(_update_job, job_id, status="DONE")
-
+        await client.post(callback_url, json=payload, timeout=30)
     except Exception as e:
-        logger.error("collect_channel fatal error job=%s: %s", job_id, e)
+        logger.warning("Callback POST failed url=%s: %s", callback_url, e)
+
+
+async def collect_channel(job_id: str, channel_id: str, callback_url: str) -> None:
+    async with httpx.AsyncClient() as client:
         try:
-            await asyncio.to_thread(_update_job, job_id, status="FAILED", errorMessage=str(e)[:500])
-        except Exception:
-            pass
+            try:
+                video_ids = await asyncio.to_thread(_get_video_ids, channel_id)
+            except Exception as e:
+                await _post_callback(client, callback_url, {
+                    "job_id": job_id,
+                    "event": "failed",
+                    "error": str(e)[:500],
+                })
+                return
+
+            if _DEV_MAX_VIDEOS:
+                video_ids = video_ids[:_DEV_MAX_VIDEOS]
+
+            await _post_callback(client, callback_url, {
+                "job_id": job_id,
+                "event": "started",
+                "total_videos": len(video_ids),
+            })
+
+            for video_id in video_ids:
+                try:
+                    comments = await asyncio.to_thread(_collect_comments_for_video, video_id)
+                    await _post_callback(client, callback_url, {
+                        "job_id": job_id,
+                        "event": "video_done",
+                        "video_id": video_id,
+                        "comments": comments,
+                    })
+                except Exception as e:
+                    logger.warning("Failed to process video %s: %s", video_id, e)
+                    # 영상 1개 실패 시 continue (Job 전체 중단 금지)
+
+            await _post_callback(client, callback_url, {
+                "job_id": job_id,
+                "event": "done",
+            })
+
+        except Exception as e:
+            logger.error("collect_channel fatal error job=%s: %s", job_id, e)
+            await _post_callback(client, callback_url, {
+                "job_id": job_id,
+                "event": "failed",
+                "error": str(e)[:500],
+            })

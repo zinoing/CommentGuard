@@ -29,6 +29,8 @@ services:
     environment:
       OPENAI_API_KEY: ${OPENAI_API_KEY}
       DATABASE_URL: postgresql://commentguard:commentguard_dev@postgres:5432/commentguard
+      INTERNAL_SECRET: ${INTERNAL_SECRET}
+      BFF_CALLBACK_URL: http://bff-api:3001/internal/collect/video-done
     depends_on:
       postgres:
         condition: service_healthy
@@ -91,6 +93,8 @@ services:
       DATABASE_URL: postgresql://commentguard:commentguard_dev@postgres:5432/commentguard
       JWT_SECRET: ${JWT_SECRET}
       ALLOWED_ORIGINS: http://localhost:3000
+      INTERNAL_SECRET: ${INTERNAL_SECRET}
+      CLASSIFIER_URL: http://risk-classifier:8001
     depends_on:
       postgres:
         condition: service_healthy
@@ -103,6 +107,8 @@ services:
       - "3000:3000"
     environment:
       NEXT_PUBLIC_BFF_URL: http://localhost:3001
+      BFF_URL: http://bff-api:3001
+      INTERNAL_SECRET: ${INTERNAL_SECRET}
     depends_on:
       - bff-api
 

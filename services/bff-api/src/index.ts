@@ -8,6 +8,8 @@ import { commentsRoute } from "./routes/comments";
 import { casesRoute } from "./routes/cases";
 import { shareLinksRoute } from "./routes/share-links";
 import { dashboardRoute } from "./routes/dashboard";
+import { collectRoute, internalCollectRoute } from "./routes/collect";
+import { channelsRoute, devChannelsRoute } from "./routes/channels";
 
 const app = Fastify({
   logger: {
@@ -56,6 +58,10 @@ async function bootstrap() {
   app.register(casesRoute, { prefix: "/api/v1/cases" });
   app.register(shareLinksRoute, { prefix: "/api/v1/share-links" });
   app.register(dashboardRoute, { prefix: "/api/v1/dashboard" });
+  app.register(collectRoute, { prefix: "/api/v1" });
+  app.register(internalCollectRoute, { prefix: "/internal" });
+  app.register(channelsRoute, { prefix: "/api/v1" });
+  app.register(devChannelsRoute, { prefix: "/api/dev" });
 
   const port = Number(process.env.PORT ?? 3001);
   await app.listen({ port, host: "0.0.0.0" });

@@ -7,7 +7,14 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
-client = AsyncOpenAI(api_key=os.getenv("OPENAI_API_KEY"))
+_client: AsyncOpenAI | None = None
+
+
+def _get_client() -> AsyncOpenAI:
+    global _client
+    if _client is None:
+        _client = AsyncOpenAI(api_key=os.getenv("OPENAI_API_KEY"))
+    return _client
 
 SYSTEM_PROMPT = """You are a legal risk classifier for online comments. Classify the given comment for:
 1. Legal threats (threats, doxxing, stalking)
@@ -90,7 +97,7 @@ async def classify_with_ml(text: str) -> dict:
 
 async def _classify_with_gpt4o(text: str) -> dict:
     try:
-        response = await client.chat.completions.create(
+        response = await _get_client().chat.completions.create(
             model=GPT_MODEL_VERSION,
             messages=[
                 {"role": "system", "content": SYSTEM_PROMPT},

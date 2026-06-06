@@ -89,6 +89,10 @@ model Channel {
   tenantId            String
   tenant              Tenant    @relation(fields: [tenantId], references: [id])
   apiCredentialsRef   String
+  mcnId               String?
+  oauthAccessToken    String?
+  oauthRefreshToken   String?
+  lastCollectedAt     DateTime?
   createdAt           DateTime  @default(now())
   updatedAt           DateTime  @updatedAt
   comments            Comment[]
@@ -222,16 +226,35 @@ model AccountPattern {
   updatedAt        DateTime  @updatedAt
 }
 
+enum ChannelInviteStatus {
+  PENDING
+  ACCEPTED
+  EXPIRED
+}
+
+model ChannelInvite {
+  id          String              @id @default(cuid())
+  mcnId       String
+  channelName String
+  token       String              @unique
+  status      ChannelInviteStatus @default(PENDING)
+  expiresAt   DateTime
+  createdAt   DateTime            @default(now())
+}
+
 model CollectJob {
-  id              String           @id @default(cuid())
-  channelId       String
-  status          CollectJobStatus @default(PENDING)
-  totalVideos     Int              @default(0)
-  processedVideos Int              @default(0)
-  totalComments   Int              @default(0)
-  errorMessage    String?
-  createdAt       DateTime         @default(now())
-  updatedAt       DateTime         @updatedAt
+  id               String           @id @default(cuid())
+  channelId        String
+  status           CollectJobStatus @default(PENDING)
+  totalVideos      Int              @default(0)
+  processedVideos  Int              @default(0)
+  totalComments    Int              @default(0)
+  newComments      Int              @default(0)
+  modifiedComments Int              @default(0)
+  deletedComments  Int              @default(0)
+  errorMessage     String?
+  createdAt        DateTime         @default(now())
+  updatedAt        DateTime         @updatedAt
 }
 
 // k-anonymity: NO channel_id, author_id, mcn_id, or any PII

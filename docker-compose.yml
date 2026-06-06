@@ -1,8 +1,5 @@
 version: "3.9"
 
-# Phase 1 (MVP) stack — local only
-# Phase 3+: Redis, Kafka, Elasticsearch are NOT included here
-
 services:
   postgres:
     image: postgres:15-alpine
@@ -20,69 +17,6 @@ services:
       timeout: 5s
       retries: 5
 
-  risk-classifier:
-    build:
-      context: services/risk-classifier
-      dockerfile: Dockerfile
-    ports:
-      - "8001:8001"
-    environment:
-      OPENAI_API_KEY: ${OPENAI_API_KEY}
-      DATABASE_URL: postgresql://commentguard:commentguard_dev@postgres:5432/commentguard
-      INTERNAL_SECRET: ${INTERNAL_SECRET}
-      BFF_CALLBACK_URL: http://bff-api:3001/internal/collect/video-done
-    depends_on:
-      postgres:
-        condition: service_healthy
-
-  collector-service:
-    build:
-      context: .
-      dockerfile: services/collector-service/Dockerfile
-    ports:
-      - "3002:3002"
-    environment:
-      DATABASE_URL: postgresql://commentguard:commentguard_dev@postgres:5432/commentguard
-      YOUTUBE_API_KEY: ${YOUTUBE_API_KEY}
-      R2_BUCKET_NAME: ${R2_BUCKET_NAME}
-      R2_ENDPOINT_URL: ${R2_ENDPOINT_URL}
-      R2_ACCESS_KEY_ID: ${R2_ACCESS_KEY_ID}
-      R2_SECRET_ACCESS_KEY: ${R2_SECRET_ACCESS_KEY}
-      CLASSIFIER_URL: http://risk-classifier:8001
-    depends_on:
-      postgres:
-        condition: service_healthy
-      risk-classifier:
-        condition: service_started
-
-  evidence-service:
-    build:
-      context: .
-      dockerfile: services/evidence-service/Dockerfile
-    ports:
-      - "3003:3003"
-    environment:
-      DATABASE_URL: postgresql://commentguard:commentguard_dev@postgres:5432/commentguard
-      R2_BUCKET_NAME: ${R2_BUCKET_NAME}
-      R2_ENDPOINT_URL: ${R2_ENDPOINT_URL}
-      R2_ACCESS_KEY_ID: ${R2_ACCESS_KEY_ID}
-      R2_SECRET_ACCESS_KEY: ${R2_SECRET_ACCESS_KEY}
-    depends_on:
-      postgres:
-        condition: service_healthy
-
-  action-service:
-    build:
-      context: .
-      dockerfile: services/action-service/Dockerfile
-    ports:
-      - "3004:3004"
-    environment:
-      DATABASE_URL: postgresql://commentguard:commentguard_dev@postgres:5432/commentguard
-    depends_on:
-      postgres:
-        condition: service_healthy
-
   bff-api:
     build:
       context: .
@@ -90,14 +24,46 @@ services:
     ports:
       - "3001:3001"
     environment:
+      NODE_ENV: development
+      PORT: 3001
       DATABASE_URL: postgresql://commentguard:commentguard_dev@postgres:5432/commentguard
       JWT_SECRET: ${JWT_SECRET}
+      CLASSIFIER_URL: http://risk-classifier:8001
+      BFF_CALLBACK_URL: http://bff-api:3001/internal/collect/video-done
       ALLOWED_ORIGINS: http://localhost:3000
       INTERNAL_SECRET: ${INTERNAL_SECRET}
-      CLASSIFIER_URL: http://risk-classifier:8001
+      LOG_LEVEL: ${LOG_LEVEL:-info}
     depends_on:
       postgres:
         condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3001/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+
+  risk-classifier:
+    build:
+      context: services/risk-classifier
+      dockerfile: Dockerfile
+    ports:
+      - "8001:8001"
+    environment:
+      DATABASE_URL: postgresql://commentguard:commentguard_dev@postgres:5432/commentguard
+      OPENAI_API_KEY: ${OPENAI_API_KEY}
+      YOUTUBE_API_KEY: ${YOUTUBE_API_KEY}
+      BFF_CALLBACK_URL: http://bff-api:3001/internal/collect/video-done
+      INTERNAL_SECRET: ${INTERNAL_SECRET}
+      DEV_MAX_VIDEOS: ${DEV_MAX_VIDEOS:-3}
+      DEV_MAX_COMMENTS: ${DEV_MAX_COMMENTS:-100}
+    depends_on:
+      postgres:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8001/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
 
   web:
     build:
@@ -106,9 +72,13 @@ services:
     ports:
       - "3000:3000"
     environment:
-      NEXT_PUBLIC_BFF_URL: http://localhost:3001
+      NODE_ENV: development
+      NEXTAUTH_URL: http://localhost:3000
+      NEXTAUTH_SECRET: ${NEXTAUTH_SECRET}
+      GOOGLE_CLIENT_ID: ${GOOGLE_CLIENT_ID}
+      GOOGLE_CLIENT_SECRET: ${GOOGLE_CLIENT_SECRET}
       BFF_URL: http://bff-api:3001
-      INTERNAL_SECRET: ${INTERNAL_SECRET}
+      NEXT_PUBLIC_BFF_URL: http://localhost:3001
     depends_on:
       - bff-api
 

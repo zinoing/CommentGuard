@@ -2,9 +2,12 @@ import crypto from "node:crypto";
 import { FastifyInstance } from "fastify";
 import { prisma } from "@commentguard/db";
 
-const CLASSIFIER_URL = process.env.CLASSIFIER_URL ?? "http://risk-classifier:8001";
-const BFF_CALLBACK_URL =
-  process.env.BFF_CALLBACK_URL ?? "http://bff-api:3001/internal/collect/video-done";
+const CLASSIFIER_URL = process.env.CLASSIFIER_URL;
+const BFF_CALLBACK_URL = process.env.BFF_CALLBACK_URL;
+
+if (!CLASSIFIER_URL || !BFF_CALLBACK_URL) {
+  throw new Error("CLASSIFIER_URL and BFF_CALLBACK_URL must be set");
+}
 
 // All routes in this file are called server-to-server via INTERNAL_SECRET
 function checkSecret(req: any, reply: any): boolean {

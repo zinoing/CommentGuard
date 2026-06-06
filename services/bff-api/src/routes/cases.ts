@@ -3,7 +3,9 @@ import { prisma, isCaseTransitionAllowed } from "@commentguard/db";
 import { requireRole } from "../plugins/rbac";
 
 export async function casesRoute(app: FastifyInstance) {
-  app.addHook("preHandler", (app as any).authenticate);
+  app.addHook("preHandler", async (req, _reply) => {
+    await req.jwtVerify();
+  });
 
   app.get(
     "/",

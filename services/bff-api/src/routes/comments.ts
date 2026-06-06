@@ -4,7 +4,9 @@ import { requireRole } from "../plugins/rbac";
 
 export async function commentsRoute(app: FastifyInstance) {
   // Auth required on all routes (CHECKLIST §6)
-  app.addHook("preHandler", (app as any).authenticate);
+  app.addHook("preHandler", async (req, _reply) => {
+    await req.jwtVerify();
+  });
 
   app.get(
     "/",
@@ -29,8 +31,9 @@ export async function commentsRoute(app: FastifyInstance) {
         take: Number(limit),
       });
 
+      type C = typeof comments[number];
       // CHECKLIST §6: never include raw comment data outside subscriber's own scope
-      return comments.map((c) => ({
+      return comments.map((c: C) => ({
         id: c.id,
         channelId: c.channelId,
         createdAt: c.createdAt,

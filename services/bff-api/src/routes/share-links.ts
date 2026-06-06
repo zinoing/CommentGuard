@@ -12,7 +12,7 @@ export async function shareLinksRoute(app: FastifyInstance) {
     "/",
     {
       preHandler: [
-        (app as any).authenticate,
+        async (req: any, _reply: any) => { await req.jwtVerify(); },
         requireRole("SUPER_ADMIN", "CHANNEL_MANAGER"),
       ],
     },
@@ -119,7 +119,7 @@ export async function shareLinksRoute(app: FastifyInstance) {
     "/:id/revoke",
     {
       preHandler: [
-        (app as any).authenticate,
+        async (req: any, _reply: any) => { await req.jwtVerify(); },
         requireRole("SUPER_ADMIN", "CHANNEL_MANAGER"),
       ],
     },

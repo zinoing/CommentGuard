@@ -6,7 +6,10 @@ export async function POST(request: NextRequest) {
     return NextResponse.json(null, { status: 404 });
   }
 
-  const BFF = process.env.BFF_URL ?? "http://bff-api:3001";
+  const BFF = process.env.BFF_URL;
+  if (!BFF) {
+    return NextResponse.json({ error: "BFF_URL not configured" }, { status: 500 });
+  }
   const SECRET = process.env.INTERNAL_SECRET ?? "";
 
   try {

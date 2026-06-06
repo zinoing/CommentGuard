@@ -2,8 +2,8 @@ import { FastifyInstance, FastifyRequest, FastifyReply } from "fastify";
 import fp from "fastify-plugin";
 import { prisma } from "@commentguard/db";
 
-declare module "fastify" {
-  interface FastifyRequest {
+declare module "@fastify/jwt" {
+  interface FastifyJWT {
     user: {
       id: string;
       email: string;

@@ -24,12 +24,15 @@ def _channel_to_url(channel_id: str) -> str:
 
 def _get_video_ids(channel_id: str) -> list[str]:
     url = _channel_to_url(channel_id)
-    r = subprocess.run(
-        ["yt-dlp", "--flat-playlist", "--print", "id", "--no-warnings", url],
-        capture_output=True,
-        text=True,
-        timeout=120,
-    )
+    if not url.endswith("/videos"):
+        url = url.rstrip("/") + "/videos"
+
+    cmd = ["yt-dlp", "--flat-playlist", "--print", "id", "--no-warnings"]
+    if _DEV_MAX_VIDEOS:
+        cmd += ["--playlist-end", str(_DEV_MAX_VIDEOS)]
+    cmd.append(url)
+
+    r = subprocess.run(cmd, capture_output=True, text=True, timeout=120)
     if r.returncode != 0:
         raise RuntimeError(r.stderr.strip() or "yt-dlp failed to list channel videos")
     return [line.strip() for line in r.stdout.splitlines() if line.strip()]
@@ -72,7 +75,9 @@ async def _post_callback(client: httpx.AsyncClient, callback_url: str, payload: 
 
 
 async def collect_channel(job_id: str, channel_id: str, callback_url: str) -> None:
-    async with httpx.AsyncClient() as client:
+    async with httpx.AsyncClient(headers={
+        "X-Internal-Secret": os.getenv("INTERNAL_SECRET", ""),
+    }) as client:
         try:
             try:
                 video_ids = await asyncio.to_thread(_get_video_ids, channel_id)

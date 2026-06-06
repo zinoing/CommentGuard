@@ -132,26 +132,33 @@ class _ChannelInfoResponse(BaseModel):
 
 def _get_channel_info(channel_url: str) -> tuple[str, str]:
     """Return (platform_channel_id, channel_name) via yt-dlp."""
-    r = subprocess.run(
-        [
-            "yt-dlp",
-            "--flat-playlist",
-            "--playlist-end", "1",
-            "--print", "%(channel_id)s\t%(channel)s",
-            "--no-warnings",
-            channel_url,
-        ],
-        capture_output=True,
-        text=True,
-        timeout=60,
+    videos_url = channel_url.rstrip("/") + "/videos"
+
+    # Step 1: 영상 ID 1개 가져오기
+    r1 = subprocess.run(
+        ["yt-dlp", "--flat-playlist", "--playlist-end", "1",
+         "--print", "%(id)s", "--no-warnings", videos_url],
+        capture_output=True, text=True, timeout=60,
     )
-    if r.returncode != 0:
-        raise RuntimeError(r.stderr.strip() or "yt-dlp failed to extract channel info")
-    line = r.stdout.strip().splitlines()[0] if r.stdout.strip() else ""
-    parts = line.split("\t", 1)
-    if len(parts) != 2 or not parts[0]:
-        raise RuntimeError(f"Unexpected yt-dlp output: {line!r}")
-    return parts[0].strip(), parts[1].strip()
+    video_ids = [l.strip() for l in r1.stdout.strip().splitlines() if l.strip()]
+    if not video_ids:
+        raise RuntimeError("No videos found for this channel")
+
+    video_id = video_ids[0]
+
+    # Step 2: 해당 영상에서 채널 정보 추출
+    r2 = subprocess.run(
+        ["yt-dlp", "--skip-download", "--no-playlist",
+         "--print", "%(channel_id)s",
+         "--print", "%(channel)s",
+         "--no-warnings",
+         f"https://www.youtube.com/watch?v={video_id}"],
+        capture_output=True, text=True, timeout=60,
+    )
+    lines = [l.strip() for l in r2.stdout.strip().splitlines() if l.strip()]
+    if len(lines) < 2:
+        raise RuntimeError(f"Could not extract channel info from video {video_id}")
+    return lines[0], lines[1]
 
 
 @router.post("/dev/channel-info", response_model=_ChannelInfoResponse)

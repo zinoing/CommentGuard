@@ -9,6 +9,160 @@ const BFF_CALLBACK_URL =
 // Map<jobId, Set<platformCommentId>>
 const _jobCollectedIds = new Map<string, Set<string>>();
 
+// Legal label source is determined by label prefix (see Rule Engine v3 §9)
+function legalLabelSource(label: string): string {
+  if (label.startsWith("element.")) return "element";
+  if (label.startsWith("pattern.")) return "embedding";
+  if (label.startsWith("nli.")) return "nli";
+  return "rule";
+}
+
+// Calls risk-classifier lanes endpoint for a newly inserted comment and stores
+// the resulting signals/labels. Throws on failure — caller isolates with try/catch
+// so classification failure never fails collection.
+async function classifyAndStoreSignals(comment: {
+  id: string;
+  channelId: string;
+  text: string;
+  authorPlatformId: string;
+}) {
+  // skip if this comment already has a signal (ops signal is always created together)
+  const existingSignal = await prisma.commentOpsSignal.findFirst({
+    where: { commentId: comment.id },
+    select: { id: true },
+  });
+  if (existingSignal) return;
+
+  const duplicateCount = await prisma.comment.count({
+    where: { channelId: comment.channelId, text: comment.text },
+  });
+
+  const accountPattern = await prisma.accountPattern.findUnique({
+    where: { authorPlatformId: comment.authorPlatformId },
+  });
+
+  const res = await fetch(`${CLASSIFIER_URL}/api/v1/classify/lanes`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      comment_id: comment.id,
+      text: comment.text,
+      author_id: comment.authorPlatformId,
+      channel_id: comment.channelId,
+      duplicate_count: duplicateCount,
+      account_pattern: accountPattern
+        ? {
+            is_new_account: accountPattern.isNewAccount,
+            comment_count_30d: accountPattern.commentCount30d,
+          }
+        : null,
+    }),
+  });
+  if (!res.ok) throw new Error(`classifier lanes returned ${res.status}`);
+
+  const { ops_signal, legal_signal } = (await res.json()) as {
+    ops_signal: {
+      ruleVersion: string;
+      spamFlags: string[];
+      repetitionCount: number;
+      urlRatio: number;
+      opsScore: number;
+      labels: string[];
+      classification: string;
+    } | null;
+    legal_signal: {
+      ruleVersion: string;
+      modelVersion: string;
+      expressionType: string;
+      targetSpecificity: string;
+      allegationTypes: string[];
+      assertionStrength: number;
+      evidencePresent: boolean;
+      evidenceTypes: string[];
+      extractedEntities: string[];
+      elementScore: number;
+      embeddingScore: number;
+      embeddingCategory: string | null;
+      nliScore: number;
+      nliHypothesis: string | null;
+      legalScore: number;
+      requiresHumanReview: boolean;
+      classification: string;
+      labels: string[];
+    } | null;
+  };
+
+  const labelRows: {
+    commentId: string;
+    label: string;
+    lane: string;
+    source: string;
+    ruleVersion: string;
+  }[] = [];
+
+  if (ops_signal) {
+    await prisma.commentOpsSignal.create({
+      data: {
+        commentId: comment.id,
+        ruleVersion: ops_signal.ruleVersion,
+        spamFlags: ops_signal.spamFlags,
+        repetitionCount: ops_signal.repetitionCount,
+        urlRatio: ops_signal.urlRatio,
+        opsScore: ops_signal.opsScore,
+        labels: ops_signal.labels,
+        classification: ops_signal.classification,
+      },
+    });
+    for (const label of ops_signal.labels) {
+      labelRows.push({
+        commentId: comment.id,
+        label,
+        lane: "ops",
+        source: "rule",
+        ruleVersion: ops_signal.ruleVersion,
+      });
+    }
+  }
+
+  if (legal_signal) {
+    await prisma.commentLegalSignal.create({
+      data: {
+        commentId: comment.id,
+        ruleVersion: legal_signal.ruleVersion,
+        modelVersion: legal_signal.modelVersion,
+        expressionType: legal_signal.expressionType,
+        targetSpecificity: legal_signal.targetSpecificity,
+        allegationTypes: legal_signal.allegationTypes,
+        assertionStrength: legal_signal.assertionStrength,
+        evidencePresent: legal_signal.evidencePresent,
+        evidenceTypes: legal_signal.evidenceTypes,
+        extractedEntities: legal_signal.extractedEntities,
+        elementScore: legal_signal.elementScore,
+        embeddingScore: legal_signal.embeddingScore,
+        embeddingCategory: legal_signal.embeddingCategory,
+        nliScore: legal_signal.nliScore,
+        nliHypothesis: legal_signal.nliHypothesis,
+        legalScore: legal_signal.legalScore,
+        requiresHumanReview: legal_signal.requiresHumanReview,
+        classification: legal_signal.classification,
+      },
+    });
+    for (const label of legal_signal.labels) {
+      labelRows.push({
+        commentId: comment.id,
+        label,
+        lane: "legal",
+        source: legalLabelSource(label),
+        ruleVersion: legal_signal.ruleVersion,
+      });
+    }
+  }
+
+  if (labelRows.length > 0) {
+    await prisma.commentLabel.createMany({ data: labelRows });
+  }
+}
+
 function checkSecret(req: any, reply: any): boolean {
   const secret = process.env.INTERNAL_SECRET;
   if (!secret || req.headers["x-internal-secret"] !== secret) {
@@ -154,6 +308,12 @@ export async function internalCollectRoute(app: FastifyInstance) {
         let newCount = 0;
         let modifiedCount = 0;
         let insertedCount = 0;
+        const insertedComments: {
+          id: string;
+          channelId: string;
+          text: string;
+          authorPlatformId: string;
+        }[] = [];
 
         for (const c of comments) {
           collectedIds.add(c.platform_comment_id);
@@ -170,7 +330,7 @@ export async function internalCollectRoute(app: FastifyInstance) {
 
           if (!existing) {
             try {
-              await prisma.comment.create({
+              const created = await prisma.comment.create({
                 data: {
                   channelId: job.channelId,
                   platformCommentId: c.platform_comment_id,
@@ -181,6 +341,12 @@ export async function internalCollectRoute(app: FastifyInstance) {
               });
               newCount++;
               insertedCount++;
+              insertedComments.push({
+                id: created.id,
+                channelId: created.channelId,
+                text: created.text,
+                authorPlatformId: created.authorPlatformId,
+              });
             } catch {
               // race condition — another process inserted first, re-check for modified
               const recheck = await prisma.comment.findUnique({
@@ -209,6 +375,15 @@ export async function internalCollectRoute(app: FastifyInstance) {
             modifiedComments: { increment: modifiedCount },
           },
         });
+
+        // Classify new comments — failures must never fail collection (v3 §9)
+        for (const inserted of insertedComments) {
+          try {
+            await classifyAndStoreSignals(inserted);
+          } catch (err) {
+            req.log.error({ err, commentId: inserted.id }, "lane classification failed");
+          }
+        }
         break;
       }
 

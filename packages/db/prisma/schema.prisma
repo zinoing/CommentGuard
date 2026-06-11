@@ -257,6 +257,65 @@ model CollectJob {
   updatedAt        DateTime         @updatedAt
 }
 
+// Ops Lane signal: spam/noise/bot observations — reference_only, never a judgment
+model CommentOpsSignal {
+  id              String   @id @default(cuid())
+  commentId       String
+  ruleVersion     String
+  detectedAt      DateTime @default(now())
+  spamFlags       String[]
+  repetitionCount Int      @default(0)
+  urlRatio        Float    @default(0)
+  opsScore        Float
+  labels          String[]
+  classification  String   @default("reference_only")
+
+  @@index([commentId])
+}
+
+// Legal Lane signal: element decomposition + embedding/NLI scores — reference_only
+model CommentLegalSignal {
+  id                  String   @id @default(cuid())
+  commentId           String
+  ruleVersion         String
+  modelVersion        String   @default("rule-only-v2")
+  detectedAt          DateTime @default(now())
+  expressionType      String   // "fact" | "suspicion" | "opinion" | "quotation" | "mixed"
+  targetSpecificity   String   // "explicit" | "implicit" | "none"
+  allegationTypes     String[]
+  assertionStrength   Int      // 0 | 1 | 2
+  evidencePresent     Boolean
+  evidenceTypes       String[]
+  extractedEntities   String[]
+  // per-detection-path signals (explainability)
+  elementScore        Float    @default(0) // defamation element decomposition score
+  embeddingScore      Float    @default(0) // best centroid/pattern similarity
+  embeddingCategory   String?
+  nliScore            Float    @default(0) // best NLI zero-shot probability
+  nliHypothesis       String?
+  legalScore          Float
+  notes               String?
+  requiresHumanReview Boolean  @default(false)
+  classification      String   @default("reference_only")
+
+  @@index([commentId])
+  @@index([requiresHumanReview])
+}
+
+// Atomic observation labels (facts, not judgments)
+model CommentLabel {
+  id          String   @id @default(cuid())
+  commentId   String
+  label       String
+  lane        String   // "legal" | "ops"
+  source      String   // "rule" | "embedding" | "nli" | "element"
+  ruleVersion String?
+  detectedAt  DateTime @default(now())
+
+  @@index([commentId])
+  @@index([label])
+}
+
 // k-anonymity: NO channel_id, author_id, mcn_id, or any PII
 // Only written when derived from >= 50 distinct channels
 model NetworkPattern {

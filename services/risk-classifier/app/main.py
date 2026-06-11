@@ -9,6 +9,7 @@ from app.routes.classify import router as classify_router
 from app.routes.feedback import router as feedback_router
 from app.routes.audit import router as audit_router
 from app.routes.collect import router as collect_router
+from app.routes.classify_lanes import router as classify_lanes_router
 
 app = FastAPI(title="CommentGuard Risk Classifier", version="1.0.0")
 
@@ -21,6 +22,7 @@ app.include_router(classify_router, prefix="/api/v1")
 app.include_router(feedback_router, prefix="/api/v1")
 app.include_router(audit_router, prefix="/api/v1")
 app.include_router(collect_router, prefix="/api/v1")
+app.include_router(classify_lanes_router)  # router declares full /api/v1 path itself
 
 # DEV ONLY — remove before GA
 if os.getenv("NODE_ENV") != "production":

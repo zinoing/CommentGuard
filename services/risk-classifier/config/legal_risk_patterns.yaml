@@ -1,0 +1,18 @@
+version: "legal-patterns-v2.0.0"
+role: "explicit-case fast detection only. defamation is handled by element decomposition."
+categories:
+  threat:
+    label: "협박 직접 표현"
+    patterns:
+      - "죽여버리겠다"
+      - "가만 안 둔다"
+      - "찾아가서 가만두지 않겠다"
+      - "집 주소 안다 조심해라"
+      - "밤길 조심해라"
+      - "신상 다 털어버리겠다"
+  harassment:
+    label: "지속적 괴롭힘 선언"
+    patterns:
+      - "계속 따라다니면서 괴롭힐 거다"
+      - "영상 올릴 때마다 찾아오겠다"
+      - "그만둘 때까지 멈추지 않는다"

@@ -63,6 +63,7 @@ services:
       DEV_MAX_COMMENTS: ${DEV_MAX_COMMENTS:-100}
     volumes:
       - ./services/risk-classifier/app:/app/app
+      - hf_cache:/root/.cache/huggingface
     depends_on:
       postgres:
         condition: service_healthy
@@ -100,3 +101,4 @@ services:
 
 volumes:
   postgres_data:
+  hf_cache:
